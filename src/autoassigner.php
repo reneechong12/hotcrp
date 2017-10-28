@@ -13,13 +13,13 @@ class AutoassignerCosts implements JsonSerializable {
     }
 }
 
-class Autoassigner {
+class Autoassigner extends MessageSet {
     public $conf;
-    private $pcm;
+    protected $pcm;
     private $badpairs = array();
     private $papersel;
-    private $ass = null;
-    private $load;
+    protected $acsv = null;
+    protected $load;
     private $prefs;
     private $eass;
     public $prefinfo = array();
@@ -29,10 +29,10 @@ class Autoassigner {
     private $review_gadget = self::REVIEW_GADGET_DEFAULT;
     public $costs;
     private $progressf = array();
-    private $mcmf;
+    protected $mcmf;
+    protected $mcmf_max_cost;
     private $mcmf_round_descriptor; // for use in MCMF progress
     private $mcmf_optimizing_for; // for use in MCMF progress
-    private $mcmf_max_cost;
     private $ndesired;
     public $profile = ["maxflow" => 0, "mincost" => 0];
 
@@ -103,43 +103,16 @@ class Autoassigner {
             call_user_func($progressf, $status);
     }
 
-
-    function run_prefconflict($papertype) {
-        $papers = array_fill_keys($this->papersel, 1);
-        $result = $this->conf->qe_raw($this->conf->preferenceConflictQuery($papertype, ""));
-        $this->ass = array("paper,action,email");
-        while (($row = edb_row($result))) {
-            if (!isset($papers[$row[0]]) || !isset($this->pcm[$row[1]]))
-                continue;
-            $this->ass[] = "$row[0],conflict," . $this->pcm[$row[1]]->email;
-            $this->prefinfo[(int) $row[1]][(int) $row[0]] = $row[2];
-        }
-        Dbl::free($result);
+    function paper_ids() {
+        return $this->papersel;
     }
 
-    function run_clear($reviewtype) {
-        $papers = array_fill_keys($this->papersel, 1);
-        if ($reviewtype == REVIEW_PRIMARY
-            || $reviewtype == REVIEW_SECONDARY
-            || $reviewtype == REVIEW_PC) {
-            $q = "select paperId, contactId from PaperReview where reviewType=" . $reviewtype;
-            $action = "noreview";
-        } else if ($reviewtype === "conflict") {
-            $q = "select paperId, contactId from PaperConflict where conflictType>0 and conflictType<" . CONFLICT_AUTHOR;
-            $action = "noconflict";
-        } else if ($reviewtype === "lead" || $reviewtype === "shepherd") {
-            $q = "select paperId, {$reviewtype}ContactId from Paper where {$reviewtype}ContactId!=0";
-            $action = "no" . $reviewtype;
-        } else
-            return false;
-        $this->ass = array("paper,action,email");
-        $result = $this->conf->qe_raw($q);
-        while (($row = edb_row($result))) {
-            if (!isset($papers[$row[0]]) || !isset($this->pcm[$row[1]]))
-                continue;
-            $this->ass[] = "$row[0],$action," . $this->pcm[$row[1]]->email;
-        }
-        Dbl::free($result);
+    function contact_ids() {
+        return array_keys($this->pcm);
+    }
+
+    function contact_email($cid) {
+        return isset($this->pcm[$cid]) ? $this->pcm[$cid]->email : false;
     }
 
 
@@ -148,14 +121,6 @@ class Autoassigner {
         if ($reviewtype)
             $q .= " and reviewType={$reviewtype}";
         $result = $this->conf->qe($q . " group by contactId", array_keys($this->pcm));
-        while (($row = edb_row($result)))
-            $this->load[(int) $row[0]] = (int) $row[1];
-        Dbl::free($result);
-    }
-
-    private function balance_paperpc($action) {
-        $q = "select {$action}ContactId, count(paperId) from Paper where paperId ?A group by {$action}ContactId";
-        $result = $this->conf->qe($q, $this->papersel);
         while (($row = edb_row($result)))
             $this->load[(int) $row[0]] = (int) $row[1];
         Dbl::free($result);
@@ -196,7 +161,7 @@ class Autoassigner {
             }
             ++$nmade;
             if ($nmade % 16 == 0)
-                $this->set_progress(sprintf("Loading reviewer preferences (%d%% done)", (int) ($nmade * 100 / count($this->papersel) + 0.5)));
+                $this->set_progress(sprintf("Loading reviewer preferences (%.0f%% done)", $nmade * 100 / count($this->papersel)));
         }
         Dbl::free($result);
         $this->make_pref_groups();
@@ -225,74 +190,6 @@ class Autoassigner {
         $this->profile["preferences"] = microtime(true) - $time;
     }
 
-    private function preferences_paperpc($scoreinfo) {
-        $time = microtime(true);
-        $this->reset_prefs();
-
-        $all_fields = $this->conf->all_review_fields();
-        $scoredir = 1;
-        if ($scoreinfo === "x")
-            $score = "1";
-        else if ((substr($scoreinfo, 0, 1) === "-"
-                  || substr($scoreinfo, 0, 1) === "+")
-                 && isset($all_fields[substr($scoreinfo, 1)])) {
-            $score = "PaperReview." . substr($scoreinfo, 1);
-            $scoredir = substr($scoreinfo, 0, 1) === "-" ? -1 : 1;
-        } else
-            $score = "PaperReview.overAllMerit";
-
-        $query = "select Paper.paperId, ? contactId,
-            coalesce(PaperConflict.conflictType, 0) as conflictType,
-            coalesce(PaperReview.reviewType, 0) as myReviewType,
-            coalesce(PaperReview.reviewSubmitted, 0) as myReviewSubmitted,
-            coalesce($score, 0) as reviewScore,
-            Paper.outcome,
-            Paper.managerContactId
-        from Paper
-        left join PaperConflict on (PaperConflict.paperId=Paper.paperId and PaperConflict.contactId=?)
-        left join PaperReview on (PaperReview.paperId=Paper.paperId and PaperReview.contactId=?)
-        where Paper.paperId ?a
-        group by Paper.paperId";
-
-        $nmade = 0;
-        foreach ($this->pcm as $cid => $p) {
-            $result = $this->conf->qe($query, $cid, $cid, $cid, $this->papersel);
-
-            // First, collect score extremes
-            $scoreextreme = array();
-            $rows = array();
-            while (($row = edb_orow($result))) {
-                if ($row->conflictType > 0
-                    || $row->myReviewType == 0
-                    || $row->myReviewSubmitted == 0
-                    || $row->reviewScore == 0)
-                    $this->eass[$row->contactId][$row->paperId] = self::ENOASSIGN;
-                else {
-                    if (!isset($scoreextreme[$row->paperId])
-                        || $scoredir * $row->reviewScore > $scoredir * $scoreextreme[$row->paperId])
-                        $scoreextreme[$row->paperId] = $row->reviewScore;
-                    $rows[] = $row;
-                }
-            }
-            // Then, collect preferences; ignore score differences farther
-            // than 1 score away from the relevant extreme
-            foreach ($rows as $row) {
-                $scoredifference = $scoredir * ($row->reviewScore - $scoreextreme[$row->paperId]);
-                if ($scoredifference >= -1)
-                    $this->prefs[$row->contactId][$row->paperId] = $scoredifference;
-            }
-            unset($rows);        // don't need the memory any more
-
-            Dbl::free($result);
-            ++$nmade;
-            if ($nmade % 4 == 0)
-                $this->set_progress(sprintf("Loading reviewer preferences (%d%% done)", (int) ($nmade * 100 / count($this->pcm) + 0.5)));
-        }
-        $this->make_pref_groups();
-
-        $this->profile["preferences"] = microtime(true) - $time;
-    }
-
     private function make_pref_groups() {
         $this->pref_groups = array();
         foreach ($this->pcm as $cid => $p) {
@@ -310,9 +207,9 @@ class Autoassigner {
     }
 
     private function make_assignment($action, $round, $cid, $pid, &$papers) {
-        if (!$this->ass)
-            $this->ass = array("paper,action,email,round");
-        $this->ass[] = "$pid,$action," . $this->pcm[$cid]->email . $round;
+        if (!$this->acsv)
+            $this->acsv = array("paper,action,email,round");
+        $this->acsv[] = "$pid,$action," . $this->pcm[$cid]->email . $round;
         $this->eass[$cid][$pid] = self::ENEWASSIGN;
         $papers[$pid]--;
         $this->load[$cid]++;
@@ -366,7 +263,7 @@ class Autoassigner {
                 // report progress
                 ++$nmade;
                 if ($nmade % 10 == 0)
-                    $this->set_progress(sprintf("Making assignments stupidly (%d%% done)", (int) ($nmade * 100 / $ndesired + 0.5)));
+                    $this->set_progress(sprintf("Making assignments stupidly (%.0f%% done)", $nmade * 100 / $ndesired + 0.5));
                 break;
             }
 
@@ -426,7 +323,7 @@ class Autoassigner {
                 // report progress
                 ++$nmade;
                 if ($nmade % 10 == 0)
-                    $this->set_progress(sprintf("Making assignments (%d%% done)", (int) ($nmade * 100 / $ndesired + 0.5)));
+                    $this->set_progress(sprintf("Making assignments (%.0f%% done)", $nmade * 100 / $ndesired));
                 break;
             }
 
@@ -436,31 +333,56 @@ class Autoassigner {
         }
     }
 
+    protected function mcmf_start() {
+        $this->mcmf = new MinCostMaxFlow;
+        $this->mcmf->add_progressf([$this, "mcmf_progress"]);
+        $this->mcmf_max_cost = null;
+        $this->set_progress("Preparing assignment optimizer");
+        return $this->mcmf;
+    }
+
+    protected function mcmf_stop() {
+        $this->mcmf->clear(); // break circular refs
+        $this->profile["maxflow"] += $this->mcmf->maxflow_end_at - $this->mcmf->maxflow_start_at;
+        if ($this->mcmf->mincost_start_at) {
+            $this->profile["mincost"] += $this->mcmf->mincost_end_at - $this->mcmf->mincost_start_at;
+        }
+        $this->mcmf = null;
+    }
+
     function mcmf_progress($mcmf, $what, $phaseno = 0, $nphases = 0) {
         if ($what <= MinCostMaxFlow::PMAXFLOW_DONE) {
             $n = min(max($mcmf->current_flow(), 0), $this->ndesired);
             $ndesired = max($this->ndesired, 1);
-            $this->set_progress(sprintf("Preparing unoptimized assignment$this->mcmf_round_descriptor (%d%% done)", (int) ($n * 100 / $ndesired + 0.5)));
+            $this->set_progress($this->mcmf_message(-1, -1, $n * 100 / $ndesired));
         } else {
-            $x = array();
             $cost = $mcmf->current_cost();
-            if (!$this->mcmf_max_cost)
+            $percentage = -1;
+            if (!$this->mcmf_max_cost) {
                 $this->mcmf_max_cost = $cost;
-            else if ($cost < $this->mcmf_max_cost)
-                $x[] = sprintf("%.1f%% better", ((int) (($this->mcmf_max_cost - $cost) * 1000 / abs($this->mcmf_max_cost) + 0.5)) / 10);
-            $phasedescriptor = $nphases > 1 ? ", phase " . ($phaseno + 1) . "/" . $nphases : "";
-            $this->set_progress($this->mcmf_optimizing_for
-                                . $this->mcmf_round_descriptor . $phasedescriptor
-                                . ($x ? " (" . join(", ", $x) . ")" : ""));
+            } else if ($cost < $this->mcmf_max_cost) {
+                $percentage = ($this->mcmf_max_cost - $cost) * 100 / abs($this->mcmf_max_cost);
+            }
+            $this->set_progress($this->mcmf_message($phaseno, $nphases, $percentage));
+        }
+    }
+
+    function mcmf_message($phase, $nphases, $percentage) {
+        if ($phase < 0) {
+            return sprintf("Preparing unoptimized assignment%s (%.0f%% done)", $this->mcmf_round_descriptor, $percentage);
+        } else {
+            $pmsg = $percentage >= 0 ? sprintf(" (%.1f%% better)", $percentage) : "";
+            if ($nphases == 1) {
+                return $this->mcmf_optimizing_for . $this->mcmf_round_descriptor . $pmsg;
+            } else {
+                return sprintf("%s%s, phase %d/%d%s", $this->mcmf_optimizing_for, $this->mcmf_round_descriptor, $phaseno + 1, $nphases, $pmsg);
+            }
         }
     }
 
     private function assign_mcmf_once(&$papers, $action, $round, $nperpc) {
-        $m = new MinCostMaxFlow;
-        $m->add_progressf(array($this, "mcmf_progress"));
+        $m = $this->mcmf_start();
         $this->ndesired = $this->assign_desired($papers, $nperpc);
-        $this->mcmf_max_cost = null;
-        $this->set_progress("Preparing assignment optimizer" . $this->mcmf_round_descriptor);
         // existing assignment counts
         $ceass = array_fill_keys(array_keys($this->pcm), 0);
         $peass = array_fill_keys($this->papersel, 0);
@@ -560,12 +482,10 @@ class Autoassigner {
             }
         }
         // run MCMF
-        $this->mcmf = $m;
         $m->shuffle();
         $m->run();
         // make assignments
         $this->set_progress("Completing assignment" . $this->mcmf_round_descriptor);
-        $time = microtime(true);
         $nassigned = 0;
         foreach ($this->pcm as $cid => $p) {
             foreach ($m->reachable("u$cid", "p") as $v) {
@@ -576,12 +496,7 @@ class Autoassigner {
                 }
             }
         }
-        $m->clear(); // break circular refs
-        $this->mcmf = null;
-        $this->profile["maxflow"] = $m->maxflow_end_at - $m->maxflow_start_at;
-        if ($m->mincost_start_at)
-            $this->profile["mincost"] = $m->mincost_end_at - $m->mincost_start_at;
-        $this->profile["traverse"] = microtime(true) - $time;
+        $this->mcmf_stop();
         return $nassigned;
     }
 
@@ -637,20 +552,6 @@ class Autoassigner {
         $this->conf->warnMsg("I wasn’t able to complete the assignment$x.  The following papers got fewer than the required number of assignments: " . join(", ", $b) . $y . ".");
     }
 
-    function run_paperpc($action, $preference) {
-        if ($this->balance !== self::BALANCE_NEW)
-            $this->balance_paperpc($action);
-        $this->preferences_paperpc($preference);
-        $papers = array_fill_keys($this->papersel, 0);
-        $result = $this->conf->qe("select paperId from Paper where {$action}ContactId=0");
-        while (($row = edb_row($result)))
-            if (isset($papers[$row[0]]))
-                $papers[$row[0]] = 1;
-        Dbl::free($result);
-        $this->assign_method($papers, $action, "", null);
-        $this->check_missing_assignments($papers, $action);
-    }
-
     private function analyze_reviewtype($reviewtype, $round) {
         if ($reviewtype == REVIEW_PRIMARY)
             $action = "primary";
@@ -693,10 +594,244 @@ class Autoassigner {
         $this->check_missing_assignments($papers, "rev");
     }
 
+
+    function assignments() {
+        return count($this->acsv) > 1 ? $this->acsv : null;
+    }
+
+    function pc_unhappiness() {
+        if (!$this->prefs)
+            return array();
+
+        $ubypid = array();
+        foreach ($this->pcm as $cid => $p) {
+            $u = array();
+            foreach ($this->pref_groups[$cid] as $i => $pg)
+                foreach ($pg->pids as $pid)
+                    $u[$pid] = $i;
+            $ubypid[$cid] = $u;
+        }
+
+        $u = array_fill_keys(array_keys($this->pcm), 0);
+        foreach ($this->eass as $cid => $m) {
+            foreach ($m as $pid => $x)
+                if ($x === self::ENEWASSIGN)
+                    $u[$cid] += $ubypid[$cid][$pid];
+        }
+        return $u;
+    }
+
+    function has_tentative_assignment() {
+        return !empty($this->acsv) || $this->mcmf;
+    }
+
+    function tentative_assignment_map() {
+        $pcmap = $a = array();
+        foreach ($this->pcm as $cid => $p) {
+            $pcmap[$p->email] = $cid;
+            $a[$cid] = array();
+        }
+        foreach ($this->acsv as $atext) {
+            $arow = explode(",", $atext);
+            $a[$pcmap[$arow[2]]][$arow[0]] = true;
+        }
+        if (($m = $this->mcmf)) {
+            foreach ($this->pcm as $cid => $p) {
+                foreach ($m->reachable("u$cid", "p") as $v)
+                    $a[$cid][substr($v->name, 1)] = true;
+            }
+        }
+        return $a;
+    }
+}
+
+class PrefConflict_Autoassigner extends Autoassigner {
+    function __construct(Conf $conf, Qrequest $qreq) {
+        parent::__construct($conf);
+    }
+    function run() {
+        $papers = array_fill_keys($this->paper_ids(), 1);
+        $result = $this->conf->qe_raw($this->conf->preferenceConflictQuery("all", ""));
+        $this->acsv = ["paper,action,email"];
+        while (($row = edb_row($result))) {
+            if (isset($papers[$row[0]]) && ($email = $this->contact_email($row[1]))) {
+                $this->acsv[] = "{$row[0]},conflict,{$email}";
+                $this->prefinfo[(int) $row[1]][(int) $row[0]] = $row[2];
+            }
+        }
+        Dbl::free($result);
+    }
+}
+
+class ClearReview_Autoassigner extends Autoassigner {
+    private $action;
+    private $reviewtypes;
+    function __construct(Conf $conf, Qrequest $qreq) {
+        parent::__construct($conf);
+        if ($qreq->cleartype == REVIEW_META
+            || $qreq->cleartype == REVIEW_PRIMARY
+            || $qreq->cleartype == REVIEW_SECONDARY
+            || $qreq->cleartype == REVIEW_PC) {
+            $this->action = "noreview";
+            $this->reviewtypes = [(int) $qreq->cleartype];
+        } else if ($qreq->cleartype === "conflict") {
+            $this->action = "noconflict";
+        } else if ($qreq->cleartype === "lead" || $qreq->cleartype === "shepherd") {
+            $this->action = "no" . $qreq->cleartype;
+        } else {
+            $this->error_at("cleartype", "Unknown clear action.");
+        }
+    }
+    function run() {
+        if ($this->action === "noreview") {
+            $result = $this->conf->qe("select paperId, contactId from PaperReview where paperId?a and contactId?a and reviewType?a", $this->paper_ids(), $this->contact_ids(), $this->reviewtypes);
+        } else if ($this->action === "noconflict") {
+            $result = $this->conf->qe("select paperId, contactId from PaperConflict where paperId?a and contactId?a and conflictType>0 and conflictType<?", $this->paper_ids(), $this->contact_ids(), CONFLICT_AUTHOR);
+        } else if ($this->action === "nolead" || $this->action === "noshepherd") {
+            $pctype = substr($this->action, 2);
+            $result = $this->conf->qe("select paperId, {$pctype}ContactId from Paper where paperId?a and {$pctype}ContactId?a", $this->paper_ids(), $this->contact_ids());
+        }
+        $this->acsv = ["paper,action,email"];
+        while ($result && ($row = $result->fetch_row())) {
+            $this->acsv[] = "{$row[0]},{$this->action}," . $this->contact_email($row[1]);
+        }
+        Dbl::free($result);
+    }
+}
+
+class PaperPC_Autoassigner extends Autoassigner {
+    private $pctype;
+    private $balance_all;
+    function __construct(Conf $conf, Qrequest $qreq) {
+        parent::__construct($conf);
+        if ($qreq->atype === "lead" || $qreq->atype === "shepherd") {
+            $this->pctype = $qreq->atype;
+        } else {
+            $this->error_at("atype", "Unknown paper PC action.");
+        }
+        $this->balance_all = $qreq->balance === "all";
+    }
+    private function set_load() {
+        $result = $this->conf->qe("select {$this->pctype}ContactId, count(paperId) from Paper where paperId?A group by {$this->pctype}ContactId", $this->paper_ids());
+        while ($result && ($row = $result->fetch_row())) {
+            $this->load[(int) $row[0]] = (int) $row[1];
+        }
+        Dbl::free($result);
+    }
+    private function set_preferences($scoreinfo) {
+        $time = microtime(true);
+        $this->reset_prefs();
+
+        $all_fields = $this->conf->all_review_fields();
+        $scoredir = 1;
+        if ($scoreinfo === "x")
+            $score = "1";
+        else if ((substr($scoreinfo, 0, 1) === "-"
+                  || substr($scoreinfo, 0, 1) === "+")
+                 && isset($all_fields[substr($scoreinfo, 1)])) {
+            $score = "PaperReview." . substr($scoreinfo, 1);
+            $scoredir = substr($scoreinfo, 0, 1) === "-" ? -1 : 1;
+        } else
+            $score = "PaperReview.overAllMerit";
+
+// XXX $scoreinfo set in constructor
+// XXX use PaperInfo for this
+        $query = "select Paper.paperId, ? contactId,
+            coalesce(PaperConflict.conflictType, 0) as conflictType,
+            coalesce(PaperReview.reviewType, 0) as myReviewType,
+            coalesce(PaperReview.reviewSubmitted, 0) as myReviewSubmitted,
+            coalesce($score, 0) as reviewScore,
+            Paper.outcome,
+            Paper.managerContactId
+        from Paper
+        left join PaperConflict on (PaperConflict.paperId=Paper.paperId and PaperConflict.contactId=?)
+        left join PaperReview on (PaperReview.paperId=Paper.paperId and PaperReview.contactId=?)
+        where Paper.paperId ?a
+        group by Paper.paperId";
+
+        $nmade = 0;
+        foreach ($this->pcm as $cid => $p) {
+            $result = $this->conf->qe($query, $cid, $cid, $cid, $this->papersel);
+
+            // First, collect score extremes
+            $scoreextreme = array();
+            $rows = array();
+            while (($row = edb_orow($result))) {
+                if ($row->conflictType > 0
+                    || $row->myReviewType == 0
+                    || $row->myReviewSubmitted == 0
+                    || $row->reviewScore == 0)
+                    $this->eass[$row->contactId][$row->paperId] = self::ENOASSIGN;
+                else {
+                    if (!isset($scoreextreme[$row->paperId])
+                        || $scoredir * $row->reviewScore > $scoredir * $scoreextreme[$row->paperId])
+                        $scoreextreme[$row->paperId] = $row->reviewScore;
+                    $rows[] = $row;
+                }
+            }
+            // Then, collect preferences; ignore score differences farther
+            // than 1 score away from the relevant extreme
+            foreach ($rows as $row) {
+                $scoredifference = $scoredir * ($row->reviewScore - $scoreextreme[$row->paperId]);
+                if ($scoredifference >= -1)
+                    $this->prefs[$row->contactId][$row->paperId] = $scoredifference;
+            }
+            unset($rows);        // don't need the memory any more
+
+            Dbl::free($result);
+            ++$nmade;
+            if ($nmade % 4 == 0)
+                $this->set_progress(sprintf("Loading reviewer preferences (%.0f%% done)", $nmade * 100 / count($this->pcm)));
+        }
+        $this->make_pref_groups();
+
+        $this->profile["preferences"] = microtime(true) - $time;
+    }
+    function run_paperpc($action, $preference) {
+        if ($this->balance_all)
+            $this->set_load();
+        $this->preferences_paperpc($preference);
+        $papers = array_fill_keys($this->papersel, 0);
+        $result = $this->conf->qe("select paperId from Paper where {$action}ContactId=0");
+        while (($row = edb_row($result)))
+            if (isset($papers[$row[0]]))
+                $papers[$row[0]] = 1;
+        Dbl::free($result);
+        $this->assign_method($papers, $action, "", null);
+        $this->check_missing_assignments($papers, $action);
+    }
+}
+
+class Review_Autoassigner extends Autoassigner {
+
+}
+
+class DiscussionOrder_Autoassigner extends Autoassigner {
+    private $tag;
+    private $sequential = false;
+    private $roundno;
+    function __construct(Conf $conf, Qrequest $qreq) {
+        parent::__construct($conf);
+        $tag = trim((string) $qreq->discordertag);
+        $tag = $tag === "" ? "discuss" : $tag;
+        $tagger = new Tagger;
+        if (($tag = $tagger->check($tag, Tagger::NOVALUE)))
+            $this->tag = $tag;
+        else
+            $this->error_at("discordertag", $tagger->error_html);
+    }
+    function mcmf_message($phase, $nphases, $percentage) {
+        if ($phase < 0) {
+            return sprintf("Preparing unoptimized assignment (%.0f%% done)", $this->mcmf_round_descriptor, $percentage);
+        } else {
+            $msg = "Optimizing order" . ($this->roundno ? ", round " . ($this->roundno + 1));
+            $msg .= $nphases > 1 ? sprintf(", phase %d/%d", $phaseno + 1, $nphases) : "";
+            $msg .= $percentage >= 0 ? sprintf(" (%.1f%% better)", $percentage) : "";
+            return $msg;
+        }
+    }
     private function run_discussion_order_once($cflt, $plist) {
-        $m = new MinCostMaxFlow;
-        $m->add_progressf(array($this, "mcmf_progress"));
-        $this->set_progress("Preparing assignment optimizer");
+        $m = $this->mcmf_start();
         // paper nodes
         // set p->po edge cost so low that traversing that edge will
         // definitely lower total cost; all positive costs are <=
@@ -724,13 +859,12 @@ class Autoassigner {
                     $m->add_edge("po$i", "p$j", 1, $cost);
                 }
         // run MCMF
-        $this->mcmf = $m;
         $m->shuffle();
         $m->run();
         // extract next roots
         $roots = array_keys($plist);
         $result = array();
-        while (count($roots)) {
+        while (!empty($roots)) {
             $source = ".source";
             if (count($roots) !== count($plist))
                 $source = "p" . $roots[mt_rand(0, count($roots) - 1)];
@@ -747,106 +881,53 @@ class Autoassigner {
             $roots = array_values(array_diff($roots, $igroup));
         }
         // done
-        $m->clear(); // break circular refs
-        $this->mcmf = null;
-        $this->profile["maxflow"] += $m->maxflow_end_at - $m->maxflow_start_at;
-        if ($m->mincost_start_at)
-            $this->profile["mincost"] += $m->mincost_end_at - $m->mincost_start_at;
+        $this->mcmf_stop();
         return $result;
     }
 
-    function run_discussion_order($tag, $sequential = false) {
-        if (empty($this->papersel)) {
-            $this->ass = [];
+    function run() {
+        $this->acsv = [];
+        $paper_ids = $this->paper_ids();
+        if (empty($paper_ids)) {
             return;
         }
-        $this->mcmf_round_descriptor = "";
-        $this->mcmf_optimizing_for = "Optimizing assignment";
         // load conflicts
-        $cflt = array();
-        foreach ($this->papersel as $pid)
-            $cflt[$pid] = array();
-        $result = $this->conf->qe("select paperId, contactId from PaperConflict where paperId ?a and contactId ?a and conflictType>0", $this->papersel, array_keys($this->pcm));
-        while (($row = edb_row($result)))
+        $cflt = array_fill_keys($paper_ids, []);
+        $result = $this->conf->qe("select paperId, contactId from PaperConflict where paperId?a and contactId?a and conflictType>0", $paper_ids, $this->contact_ids());
+        while ($result && ($row = $result->fetch_row())) {
             $cflt[(int) $row[0]][] = (int) $row[1];
+        }
         Dbl::free($result);
         // run max-flow
-        $result = $this->papersel;
-        for ($roundno = 0; !$roundno || count($result) > 1; ++$roundno) {
-            $this->mcmf_round_descriptor = $roundno ? ", round " . ($roundno + 1) : "";
-            $result = $this->run_discussion_order_once($cflt, $result);
-            if (!$roundno) {
-                $groupmap = array();
-                foreach ($result as $i => $pids)
+        $order = $paper_ids;
+        for ($this->roundno = 0; !$this->roundno || count($order) > 1; ++$this->roundno) {
+            $order = $this->run_discussion_order_once($cflt, $order);
+            if (!$this->roundno) {
+                $groupmap = [];
+                foreach ($order as $i => $pids) {
                     foreach ($pids as $pid)
                         $groupmap[$pid] = $i;
+                }
             }
         }
         // make assignments
         $this->set_progress("Completing assignment");
-        $this->ass = array("paper,action,tag", "# hotcrp_assign_display_search",
-                           "# hotcrp_assign_show pcconf", "all,cleartag,$tag");
+        $this->acsv[] = "paper,action,tag";
+        $this->acsv[] = "# hotcrp_assign_display_search";
+        $this->acsv[] = "# hotcrp_assign_show pcconf";
+        $this->acsv[] = "all,cleartag,{$this->tag}";
         $curgroup = -1;
         $index = 0;
-        $search = array("HEADING:none");
-        foreach ($result[0] as $pid) {
+        $search = ["HEADING:none"];
+        foreach ($order[0] as $pid) {
             if ($groupmap[$pid] != $curgroup && $curgroup != -1)
                 $search[] = "THEN HEADING:none";
             $curgroup = $groupmap[$pid];
-            $index += TagInfo::value_increment($sequential ? "aos" : "ao");
-            $this->ass[] = "{$pid},tag,{$tag}#{$index}";
+            $index += TagInfo::value_increment($this->sequential ? "aos" : "ao");
+            $this->acsv[] = "{$pid},tag,{$this->tag}#{$index}";
             $search[] = $pid;
         }
-        $this->ass[1] = "# hotcrp_assign_display_search " . join(" ", $search);
+        $this->acsv[1] = "# hotcrp_assign_display_search " . join(" ", $search);
         //echo Ht::unstash_script("$('#propass').before(" . json_encode_browser(Ht::pre_text_wrap($m->debug_info(true) . "\n")) . ")");
-    }
-
-
-    function assignments() {
-        return count($this->ass) > 1 ? $this->ass : null;
-    }
-
-    function pc_unhappiness() {
-        if (!$this->prefs)
-            return array();
-
-        $ubypid = array();
-        foreach ($this->pcm as $cid => $p) {
-            $u = array();
-            foreach ($this->pref_groups[$cid] as $i => $pg)
-                foreach ($pg->pids as $pid)
-                    $u[$pid] = $i;
-            $ubypid[$cid] = $u;
-        }
-
-        $u = array_fill_keys(array_keys($this->pcm), 0);
-        foreach ($this->eass as $cid => $m) {
-            foreach ($m as $pid => $x)
-                if ($x === self::ENEWASSIGN)
-                    $u[$cid] += $ubypid[$cid][$pid];
-        }
-        return $u;
-    }
-
-    function has_tentative_assignment() {
-        return count($this->ass) || $this->mcmf;
-    }
-
-    function tentative_assignment_map() {
-        $pcmap = $a = array();
-        foreach ($this->pcm as $cid => $p) {
-            $pcmap[$p->email] = $cid;
-            $a[$cid] = array();
-        }
-        foreach ($this->ass as $atext) {
-            $arow = explode(",", $atext);
-            $a[$pcmap[$arow[2]]][$arow[0]] = true;
-        }
-        if (($m = $this->mcmf))
-            foreach ($this->pcm as $cid => $p) {
-                foreach ($m->reachable("u$cid", "p") as $v)
-                    $a[$cid][substr($v->name, 1)] = true;
-            }
-        return $a;
     }
 }
