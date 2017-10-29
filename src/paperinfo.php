@@ -541,6 +541,10 @@ class PaperInfoSet implements IteratorAggregate {
     function getIterator() {
         return new ArrayIterator($this->prows);
     }
+    function ensure_review_score($field) {
+        foreach ($this->prows as $prow)
+            $prow->ensure_review_score($field);
+    }
 }
 
 class PaperInfo {

@@ -15,9 +15,10 @@ class AutoassignerCosts implements JsonSerializable {
 
 class Autoassigner extends MessageSet {
     public $conf;
+    public $user;
     protected $pcm;
-    private $badpairs = array();
-    private $papersel;
+    private $badpairs = [];
+    private $papersel = [];
     protected $acsv = null;
     protected $load;
     private $prefs;
@@ -51,11 +52,18 @@ class Autoassigner extends MessageSet {
     const EOLDASSIGN = 3;
     const ENEWASSIGN = 4;
 
-    function __construct(Conf $conf, $papersel) {
-        $this->conf = $conf;
+    function __construct(Contact $user, Qrequest $qreq) {
+        $this->conf = $user->conf;
+        $this->user = $user;
         $this->select_pc(array_keys($this->conf->pc_members()));
-        $this->papersel = $papersel;
         $this->costs = new AutoassignerCosts;
+    }
+
+    function select_papers($pids) {
+        if ($pids instanceof SearchSelection)
+            $this->papersel = $pids->paper_ids();
+        else
+            $this->papersel = $pids ? : [];
     }
 
     function select_pc($pcids) {
@@ -107,10 +115,12 @@ class Autoassigner extends MessageSet {
         return $this->papersel;
     }
 
+    function contacts() {
+        return $this->pcm;
+    }
     function contact_ids() {
         return array_keys($this->pcm);
     }
-
     function contact_email($cid) {
         return isset($this->pcm[$cid]) ? $this->pcm[$cid]->email : false;
     }
@@ -646,8 +656,8 @@ class Autoassigner extends MessageSet {
 }
 
 class PrefConflict_Autoassigner extends Autoassigner {
-    function __construct(Conf $conf, Qrequest $qreq) {
-        parent::__construct($conf);
+    function __construct(Contact $user, Qrequest $qreq) {
+        parent::__construct($user, $qreq);
     }
     function run() {
         $papers = array_fill_keys($this->paper_ids(), 1);
@@ -666,8 +676,8 @@ class PrefConflict_Autoassigner extends Autoassigner {
 class ClearReview_Autoassigner extends Autoassigner {
     private $action;
     private $reviewtypes;
-    function __construct(Conf $conf, Qrequest $qreq) {
-        parent::__construct($conf);
+    function __construct(Contact $user, Qrequest $qreq) {
+        parent::__construct($user, $qreq);
         if ($qreq->cleartype == REVIEW_META
             || $qreq->cleartype == REVIEW_PRIMARY
             || $qreq->cleartype == REVIEW_SECONDARY
@@ -702,14 +712,26 @@ class ClearReview_Autoassigner extends Autoassigner {
 class PaperPC_Autoassigner extends Autoassigner {
     private $pctype;
     private $balance_all;
-    function __construct(Conf $conf, Qrequest $qreq) {
-        parent::__construct($conf);
+    private $score;
+    private $scoredir;
+    function __construct(Contact $user, Qrequest $qreq) {
+        parent::__construct($user, $qreq);
         if ($qreq->atype === "lead" || $qreq->atype === "shepherd") {
             $this->pctype = $qreq->atype;
         } else {
             $this->error_at("atype", "Unknown paper PC action.");
         }
         $this->balance_all = $qreq->balance === "all";
+        $score = $qreq[$this->pctype . "score"];
+        if ((string) $score === "" || $score === "x") {
+            /* no score */
+        } else if (($score[0] === "-" || $score[0] === "+")
+                   && ($rfield = $this->conf->find_review_field(substr($score, 1)))) {
+            $this->score = $rfield->id;
+            $this->scoredir = $score[0] === "-" ? -1 : 1;
+        } else {
+            $this->error_at($this->pctype . "score", "Unknown score.");
+        }
     }
     private function set_load() {
         $result = $this->conf->qe("select {$this->pctype}ContactId, count(paperId) from Paper where paperId?A group by {$this->pctype}ContactId", $this->paper_ids());
@@ -718,80 +740,61 @@ class PaperPC_Autoassigner extends Autoassigner {
         }
         Dbl::free($result);
     }
-    private function set_preferences($scoreinfo) {
+    private function set_preferences() {
         $time = microtime(true);
         $this->reset_prefs();
 
-        $all_fields = $this->conf->all_review_fields();
-        $scoredir = 1;
-        if ($scoreinfo === "x")
-            $score = "1";
-        else if ((substr($scoreinfo, 0, 1) === "-"
-                  || substr($scoreinfo, 0, 1) === "+")
-                 && isset($all_fields[substr($scoreinfo, 1)])) {
-            $score = "PaperReview." . substr($scoreinfo, 1);
-            $scoredir = substr($scoreinfo, 0, 1) === "-" ? -1 : 1;
-        } else
-            $score = "PaperReview.overAllMerit";
+        $result = $this->conf->paper_result($this->user, ["paperId" => $this->paper_ids(), "reviewSignatures" => true, "allReviewerPreference" => true, "allConflictType" => true, "scores" => ($this->score ? [$this->score] : null)]);
+        $prows = PaperInfo::fetch_all($result, $this->user);
+        $scoreextreme = array_fill_keys($this->paper_ids(), null);
+        if ($this->score) {
+            $prows->ensure_review_score($this->score);
+            foreach ($prows as $prow) {
+                $es = null;
+                foreach ($prow->reviews_by_id() as $rrow) {
+                    if ($rrow->reviewSubmitted
+                        && ($s = $rrow->{$this->score})
+                        && ($es === null || $s * $this->scoredir > $es * $this->scoredir)) {
+                        $es = $s;
+                    }
+                }
+                $scoreextreme[$prow->paperId] = $es;
+            }
+        }
 
-// XXX $scoreinfo set in constructor
-// XXX use PaperInfo for this
-        $query = "select Paper.paperId, ? contactId,
-            coalesce(PaperConflict.conflictType, 0) as conflictType,
-            coalesce(PaperReview.reviewType, 0) as myReviewType,
-            coalesce(PaperReview.reviewSubmitted, 0) as myReviewSubmitted,
-            coalesce($score, 0) as reviewScore,
-            Paper.outcome,
-            Paper.managerContactId
-        from Paper
-        left join PaperConflict on (PaperConflict.paperId=Paper.paperId and PaperConflict.contactId=?)
-        left join PaperReview on (PaperReview.paperId=Paper.paperId and PaperReview.contactId=?)
-        where Paper.paperId ?a
-        group by Paper.paperId";
-
-        $nmade = 0;
-        foreach ($this->pcm as $cid => $p) {
-            $result = $this->conf->qe($query, $cid, $cid, $cid, $this->papersel);
-
+        foreach ($this->contacts() as $p) {
             // First, collect score extremes
-            $scoreextreme = array();
-            $rows = array();
-            while (($row = edb_orow($result))) {
-                if ($row->conflictType > 0
-                    || $row->myReviewType == 0
-                    || $row->myReviewSubmitted == 0
-                    || $row->reviewScore == 0)
-                    $this->eass[$row->contactId][$row->paperId] = self::ENOASSIGN;
-                else {
-                    if (!isset($scoreextreme[$row->paperId])
-                        || $scoredir * $row->reviewScore > $scoredir * $scoreextreme[$row->paperId])
-                        $scoreextreme[$row->paperId] = $row->reviewScore;
-                    $rows[] = $row;
+            foreach ($prows as $prow) {
+                $rrow = $prow->review_of_user($p);
+                if ($rrow
+                    && $rrow->reviewSubmitted
+                    && (!$this->score
+                        || $prow->{$this->score}
+                        || $scoreextreme[$prow->paperId] === null)
+                    && !$prow->has_conflict($p)) {
+                    $s = $prow->{$this->score};
+                    $pref = $this->scoredir * ((int) $scoreextreme[$prow->paperId] - $s);
+                    $this->prefs[$p->contactId][$prow->paperId] = max($pref, -2);
+                } else {
+                    $this->eass[$p->contactId][$prow->paperId] = self::ENOASSIGN;
                 }
             }
-            // Then, collect preferences; ignore score differences farther
-            // than 1 score away from the relevant extreme
-            foreach ($rows as $row) {
-                $scoredifference = $scoredir * ($row->reviewScore - $scoreextreme[$row->paperId]);
-                if ($scoredifference >= -1)
-                    $this->prefs[$row->contactId][$row->paperId] = $scoredifference;
-            }
-            unset($rows);        // don't need the memory any more
-
-            Dbl::free($result);
             ++$nmade;
             if ($nmade % 4 == 0)
-                $this->set_progress(sprintf("Loading reviewer preferences (%.0f%% done)", $nmade * 100 / count($this->pcm)));
+                $this->set_progress(sprintf("Loading reviewer preferences (%.0f%% done)", $nmade * 100 / count($this->contacts())));
         }
         $this->make_pref_groups();
 
         $this->profile["preferences"] = microtime(true) - $time;
     }
-    function run_paperpc($action, $preference) {
+    function run($action, $preference) {
         if ($this->balance_all)
             $this->set_load();
-        $this->preferences_paperpc($preference);
-        $papers = array_fill_keys($this->papersel, 0);
+        $this->set_preferences();
+        $papers = array_fill_keys($this->paper_ids(), 0);
+// XXX “ensure leads”
+// XXX ensure vs. not ensure?
+// XXX limit paper set
         $result = $this->conf->qe("select paperId from Paper where {$action}ContactId=0");
         while (($row = edb_row($result)))
             if (isset($papers[$row[0]]))
@@ -810,8 +813,8 @@ class DiscussionOrder_Autoassigner extends Autoassigner {
     private $tag;
     private $sequential = false;
     private $roundno;
-    function __construct(Conf $conf, Qrequest $qreq) {
-        parent::__construct($conf);
+    function __construct(Contact $user, Qrequest $qreq) {
+        parent::__construct($user, $qreq);
         $tag = trim((string) $qreq->discordertag);
         $tag = $tag === "" ? "discuss" : $tag;
         $tagger = new Tagger;
@@ -835,8 +838,8 @@ class DiscussionOrder_Autoassigner extends Autoassigner {
         // paper nodes
         // set p->po edge cost so low that traversing that edge will
         // definitely lower total cost; all positive costs are <=
-        // count($this->pcm), so this edge should have cost:
-        $pocost = -(count($this->pcm) + 1);
+        // count($this->contacts()), so this edge should have cost:
+        $pocost = -(count($this->contacts()) + 1);
         $this->mcmf_max_cost = $pocost * count($plist) * 0.75;
         $m->add_node(".s", "source");
         $m->add_edge(".source", ".s", 1, 0);

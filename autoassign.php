@@ -141,13 +141,14 @@ class AutoassignerInterface {
     private $conf;
     private $user;
     private $qreq;
+    private $autoassigner;
+    private $message_set;
     private $atype;
     private $atype_review;
     private $reviewtype;
     private $reviewcount;
     private $reviewround;
     private $discordertag;
-    private $autoassigner;
     private $start_at;
     private $live;
     public $ok = false;
@@ -171,34 +172,27 @@ class AutoassignerInterface {
         $this->user = $user;
         $this->qreq = $qreq;
 
-        $atypes = array("rev" => "r", "revadd" => "r", "revpc" => "r",
-                        "lead" => true, "shepherd" => true,
-                        "prefconflict" => true, "clear" => true,
-                        "discorder" => true, "" => null);
-        $this->atype = $qreq->a;
-        if (!$this->atype || !isset($atypes[$this->atype])) {
-            $this->errors["ass"] = "Malformed request!";
-            $this->atype = "";
+        require_once("src/autoassigner.php");
+        if ($qreq->a === "rev" || $qreq->a === "revadd" || $qreq->a === "revpc")
+            $klass = "Review_Autoassigner";
+        else if ($qreq->a === "lead" || $qreq->a === "shepherd")
+            $klass = "PaperPC_Autoassigner";
+        else if ($qreq->a === "prefconflict")
+            $klass = "PrefConflict_Autoassigner";
+        else if ($qreq->a === "clear")
+            $klass = "Clear_Autoassigner";
+        else if ($qreq->a === "discorder")
+            $klass = "DiscussionOrder_Autoassigner";
+        else {
+            $this->message_set = new MessageSet;
+            $this->message_set->error_at("a", "Malformed request.");
+            return;
         }
-        $this->atype_review = $atypes[$this->atype] === "r";
 
-        $r = false;
-        if ($this->atype_review) {
-            $r = $qreq[$this->atype . "type"];
-            if ($r != REVIEW_META && $r != REVIEW_PRIMARY
-                && $r != REVIEW_SECONDARY && $r != REVIEW_PC)
-                $this->errors["ass"] = "Malformed request!";
-        } else if ($this->atype === "clear") {
-            $r = $qreq->cleartype;
-            if ($r != REVIEW_META && $r != REVIEW_PRIMARY
-                && $r != REVIEW_SECONDARY && $r != REVIEW_PC
-                && $r !== "conflict"
-                && $r !== "lead" && $r !== "shepherd")
-                $this->errors["clear"] = "Malformed request!";
-        }
-        $this->reviewtype = $r;
+        $this->autoassigner = new $klass($user, $qreq);
+        $this->message_set = $this->autoassigner;
 
-        if ($this->atype_review) {
+/*        if ($this->atype_review) {
             $this->reviewcount = cvtint($qreq[$this->atype . "ct"], -1);
             if ($this->reviewcount <= 0)
                 $this->errors[$this->atype] = "You must assign at least one review.";
@@ -207,26 +201,17 @@ class AutoassignerInterface {
             if ($this->reviewround !== ""
                 && ($err = Conf::round_name_error($this->reviewround)))
                 $this->errors["rev_round"] = $err;
-        }
+        }*/
 
-        if ($this->atype === "discorder") {
-            $tag = trim((string) $qreq->discordertag);
-            $tag = $tag === "" ? "discuss" : $tag;
-            $tagger = new Tagger;
-            if (($tag = $tagger->check($tag, Tagger::NOVALUE)))
-                $this->discordertag = $tag;
-            else
-                $this->errors["discordertag"] = $tagger->error_html;
-        }
-
-        $this->ok = empty($this->errors);
+        $this->ok = !$this->message_set->has_error();
     }
 
     function check() {
         global $Error;
-        $Error = $this->errors;
-        foreach ($this->errors as $etype => $msg)
-            Conf::msg_error($msg);
+        Conf::msg_error($this->message_set->errors());
+        foreach ($this->message_set->error_fields() as $f) {
+            $Error[$f] = true;
+        }
         return $this->ok;
     }
 
@@ -337,7 +322,8 @@ class AutoassignerInterface {
         // prepare autoassigner
         if ($this->qreq->seed && is_numeric($this->qreq->seed))
             srand((int) $this->qreq->seed);
-        $this->autoassigner = $autoassigner = new Autoassigner($this->conf, $SSel->selection());
+        $autoassigner = $this->autoassigner;
+        $autoassigner->select_papers($SSel->paper_ids());
         if ($this->qreq->pctyp === "sel") {
             $n = $autoassigner->select_pc(array_keys($pcsel));
             if ($n == 0) {
@@ -371,20 +357,15 @@ class AutoassignerInterface {
         echo '<div id="propass" class="propass">';
 
         $this->start_at = microtime(true);
-        if ($this->atype === "prefconflict")
-            $autoassigner->run_prefconflict($this->qreq->t);
-        else if ($this->atype === "clear")
-            $autoassigner->run_clear($this->reviewtype);
-        else if ($this->atype === "lead" || $this->atype === "shepherd")
-            $autoassigner->run_paperpc($this->atype, $this->qreq["{$this->atype}score"]);
+        $autoassigner->run();
+        /*
         else if ($this->atype === "revpc")
             $autoassigner->run_reviews_per_pc($this->reviewtype, $this->reviewround, $this->reviewcount);
         else if ($this->atype === "revadd")
             $autoassigner->run_more_reviews($this->reviewtype, $this->reviewround, $this->reviewcount);
         else if ($this->atype === "rev")
             $autoassigner->run_ensure_reviews($this->reviewtype, $this->reviewround, $this->reviewcount);
-        else if ($this->atype === "discorder")
-            $autoassigner->run_discussion_order($this->discordertag);
+            */
 
         if ($this->live)
             echo $this->result_html(), "</div>\n";
