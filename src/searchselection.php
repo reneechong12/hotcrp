@@ -46,6 +46,10 @@ class SearchSelection {
         return count($this->sel);
     }
 
+    function paper_ids() {
+        return $this->sel;
+    }
+
     function selection() {
         return $this->sel;
     }

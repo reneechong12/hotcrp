@@ -8,7 +8,7 @@ class GetPcassignments_ListAction extends ListAction {
         return $user->is_manager();
     }
     function run(Contact $user, $qreq, $ssel) {
-        list($header, $items) = ListAction::pcassignments_csv_data($user, $ssel->selection());
+        list($header, $items) = ListAction::pcassignments_csv_data($user, $ssel->paper_ids());
         return new Csv_SearchResult("pcassignments", $header, $items, true);
     }
 }
@@ -91,7 +91,7 @@ class GetReviewForm_ListAction extends GetReviewBase_ListAction {
             return;
         }
 
-        $result = $user->paper_result(["paperId" => $ssel->selection()]);
+        $result = $user->paper_result(["paperId" => $ssel]);
         $texts = array();
         $errors = array();
         foreach (PaperInfo::fetch_all($result, $user) as $row) {
@@ -128,7 +128,7 @@ class GetReviews_ListAction extends GetReviewBase_ListAction {
     function run(Contact $user, $qreq, $ssel) {
         $rf = $user->conf->review_form();
         $user->set_overrides($user->overrides() | Contact::OVERRIDE_CONFLICT);
-        $result = $user->paper_result(["paperId" => $ssel->selection()]);
+        $result = $user->paper_result(["paperId" => $ssel]);
         $errors = $texts = [];
         foreach (PaperInfo::fetch_all($result, $user) as $prow) {
             if (($whyNot = $user->perm_view_paper($prow))) {
@@ -176,7 +176,7 @@ class GetScores_ListAction extends ListAction {
     function run(Contact $user, $qreq, $ssel) {
         $rf = $user->conf->review_form();
         $user->set_overrides($user->overrides() | Contact::OVERRIDE_CONFLICT);
-        $result = $user->paper_result(["paperId" => $ssel->selection()]);
+        $result = $user->paper_result(["paperId" => $ssel]);
         // compose scores; NB chair is always forceShow
         $errors = $texts = $any_scores = array();
         $any_decision = $any_reviewer_identity = false;
@@ -234,7 +234,7 @@ class GetVotes_ListAction extends ListAction {
         $tagger = new Tagger($user);
         if (($tag = $tagger->check($qreq->tag, Tagger::NOVALUE | Tagger::NOCHAIR))) {
             $showtag = trim($qreq->tag); // no "23~" prefix
-            $result = $user->paper_result(["paperId" => $ssel->selection(), "tagIndex" => $tag]);
+            $result = $user->paper_result(["paperId" => $ssel, "tagIndex" => $tag]);
             $texts = array();
             foreach (PaperInfo::fetch_all($result, $user) as $prow)
                 if ($user->can_view_tags($prow, true))
@@ -255,7 +255,7 @@ class GetRank_ListAction extends ListAction {
             return self::EPERM;
         $tagger = new Tagger($user);
         if (($tag = $tagger->check($qreq->tag, Tagger::NOVALUE | Tagger::NOCHAIR))) {
-            $result = $user->paper_result(["paperId" => $ssel->selection(), "tagIndex" => $tag, "order" => "order by tagIndex, PaperReview.overAllMerit desc, Paper.paperId"]);
+            $result = $user->paper_result(["paperId" => $ssel, "tagIndex" => $tag, "order" => "order by tagIndex, PaperReview.overAllMerit desc, Paper.paperId"]);
             $real = "";
             $null = "\n";
             foreach (PaperInfo::fetch_all($result, $user) as $prow)
@@ -301,7 +301,7 @@ class GetLead_ListAction extends ListAction {
     function run(Contact $user, $qreq, $ssel) {
         $type = $this->islead ? "lead" : "shepherd";
         $key = $type . "ContactId";
-        $result = $user->paper_result(["paperId" => $ssel->selection()]);
+        $result = $user->paper_result(["paperId" => $ssel]);
         $texts = array();
         foreach (PaperInfo::fetch_all($result, $user) as $row)
             if ($row->$key

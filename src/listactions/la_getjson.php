@@ -19,7 +19,7 @@ class GetJson_ListAction extends ListAction {
         return $user->is_manager();
     }
     function run(Contact $user, $qreq, $ssel) {
-        $result = $user->paper_result(["paperId" => $ssel->selection(), "topics" => true, "options" => true]);
+        $result = $user->paper_result(["paperId" => $ssel, "topics" => true, "options" => true]);
         $pj = [];
         $ps = new PaperStatus($user->conf, $user, ["forceShow" => true, "hide_docids" => true]);
         if ($this->iszip) {

@@ -33,7 +33,7 @@ class Assign_ListAction extends ListAction {
         $mt = $qreq->assignfn;
         if ($mt === "auto") {
             $t = in_array($qreq->t, ["acc", "s"]) ? $qreq->t : "all";
-            $q = join("+", $ssel->selection());
+            $q = join("+", $ssel->paper_ids());
             go(hoturl("autoassign", "q=$q&amp;t=$t&amp;pap=$q"));
         }
 
@@ -54,10 +54,10 @@ class Assign_ListAction extends ListAction {
             return "Unknown assignment type.";
 
         $text = "paper,action,user\n";
-        foreach ($ssel->selection() as $pid)
+        foreach ($ssel->paper_ids() as $pid)
             $text .= "$pid,$mt,$mpc\n";
         $assignset = new AssignmentSet($user);
-        $assignset->enable_papers($ssel->selection());
+        $assignset->enable_papers($ssel->paper_ids());
         $assignset->parse($text);
         return $assignset->execute(true);
     }

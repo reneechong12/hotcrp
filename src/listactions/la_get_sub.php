@@ -80,7 +80,7 @@ class GetDocument_ListAction extends ListAction {
         return $x;
     }
     function run(Contact $user, $qreq, $ssel) {
-        $result = $user->paper_result(["paperId" => $ssel->selection()]);
+        $result = $user->paper_result(["paperId" => $ssel]);
         $downloads = $errors = [];
         $opt = $user->conf->paper_opts->get($this->dt);
         foreach (PaperInfo::fetch_all($result, $user) as $row)
@@ -103,7 +103,7 @@ class GetDocument_ListAction extends ListAction {
 
 class GetCheckFormat_ListAction extends ListAction {
     function run(Contact $user, $qreq, $ssel) {
-        $result = $user->paper_result(["paperId" => $ssel->selection()]);
+        $result = $user->paper_result(["paperId" => $ssel]);
         $papers = [];
         foreach (PaperInfo::fetch_all($result, $user) as $prow)
             if ($user->can_view_pdf($prow))
@@ -199,7 +199,7 @@ class GetAbstract_ListAction extends ListAction {
         return $text . "\n";
     }
     function run(Contact $user, $qreq, $ssel) {
-        $result = $user->paper_result(["paperId" => $ssel->selection(), "topics" => 1]);
+        $result = $user->paper_result(["paperId" => $ssel, "topics" => 1]);
         $texts = array();
         foreach (PaperInfo::fetch_all($result, $user) as $prow) {
             if (($whyNot = $user->perm_view_paper($prow)))
@@ -229,7 +229,7 @@ class GetAuthors_ListAction extends ListAction {
     }
     function run(Contact $user, $qreq, $ssel) {
         $contact_map = self::contact_map($user->conf, $ssel);
-        $result = $user->paper_result(["paperId" => $ssel->selection(), "allConflictType" => 1]);
+        $result = $user->paper_result(["paperId" => $ssel, "allConflictType" => 1]);
         $texts = array();
         $want_contacttype = false;
         foreach (PaperInfo::fetch_all($result, $user) as $prow) {
@@ -271,7 +271,7 @@ class GetContacts_ListAction extends ListAction {
     }
     function run(Contact $user, $qreq, $ssel) {
         $contact_map = GetAuthors_ListAction::contact_map($user->conf, $ssel);
-        $result = $user->paper_result(["paperId" => $ssel->selection(), "allConflictType" => 1]);
+        $result = $user->paper_result(["paperId" => $ssel, "allConflictType" => 1]);
         foreach (PaperInfo::fetch_all($result, $user) as $prow)
             if ($user->allow_administer($prow))
                 foreach ($prow->contacts() as $cid => $c) {
@@ -292,7 +292,7 @@ class GetPcconflicts_ListAction extends ListAction {
         $allConflictTypes[CONFLICT_CHAIRMARK] = "Chair-confirmed";
         $allConflictTypes[CONFLICT_AUTHOR] = "Author";
         $allConflictTypes[CONFLICT_CONTACTAUTHOR] = "Contact";
-        $result = $user->paper_result(["paperId" => $ssel->selection(), "allConflictType" => 1]);
+        $result = $user->paper_result(["paperId" => $ssel, "allConflictType" => 1]);
         $pcm = $user->conf->pc_members();
         $texts = array();
         foreach (PaperInfo::fetch_all($result, $user) as $prow)
@@ -314,7 +314,7 @@ class GetPcconflicts_ListAction extends ListAction {
 
 class GetTopics_ListAction extends ListAction {
     function run(Contact $user, $qreq, $ssel) {
-        $result = $user->paper_result(array("paperId" => $ssel->selection(), "topics" => 1));
+        $result = $user->paper_result(array("paperId" => $ssel, "topics" => 1));
         $texts = array();
         foreach (PaperInfo::fetch_all($result, $user) as $row)
             if ($user->can_view_paper($row)) {

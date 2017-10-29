@@ -17,7 +17,7 @@ class Decide_ListAction extends ListAction {
         $decision = $qreq->decision;
         if (is_numeric($decision))
             $decision = get($user->conf->decision_map(), +$decision);
-        $aset->parse("paper,action,decision\n" . join(" ", $ssel->selection()) . ",decision," . CsvGenerator::quote($decision));
+        $aset->parse("paper,action,decision\n" . join(" ", $ssel->paper_ids()) . ",decision," . CsvGenerator::quote($decision));
         if ($aset->execute())
             redirectSelf(["atab" => "decide", "decision" => $qreq->decision]);
         else

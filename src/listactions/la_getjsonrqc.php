@@ -8,7 +8,7 @@ class GetJsonRQC_ListAction extends ListAction {
         return $user->is_manager();
     }
     function run(Contact $user, $qreq, $ssel) {
-        $result = $user->paper_result(["paperId" => $ssel->selection(), "topics" => true, "options" => true]);
+        $result = $user->paper_result(["paperId" => $ssel, "topics" => true, "options" => true]);
         $results = ["hotcrp_version" => HOTCRP_VERSION];
         if (($git_data = Conf::git_status()))
             $results["hotcrp_commit"] = $git_data[0];

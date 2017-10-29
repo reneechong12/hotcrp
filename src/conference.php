@@ -2432,6 +2432,8 @@ class Conf {
         //   "myReviews"        All reviews authored by $contactId
         //   "myOutstandingReviews" All unsubmitted reviews auth by $contactId
         //   "myConflicts"      Only conflicted papers
+        //   "reviewSignatures"
+        //   "allReviewerPreference"
         //   "commenterName"    Include commenter names
         //   "tags"             Include paperTags
         //   "tagIndex" => $tag Include tagIndex of named tag
