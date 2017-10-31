@@ -18,7 +18,12 @@ class Autoassigner {
     private $badpairs = array();
     private $papersel;
     private $ass = null;
-    private $load;
+    private $cur_uload;
+    private $max_uload;
+    private $cur_pload;
+    private $max_pload;
+    private $cur_acount;
+    private $max_acount;
     private $prefs;
     private $eass;
     public $prefinfo = array();
@@ -32,7 +37,6 @@ class Autoassigner {
     private $mcmf_round_descriptor; // for use in MCMF progress
     private $mcmf_optimizing_for; // for use in MCMF progress
     private $mcmf_max_cost;
-    private $ndesired;
     public $profile = ["maxflow" => 0, "mincost" => 0];
 
     const METHOD_MCMF = 0;
@@ -58,12 +62,13 @@ class Autoassigner {
     }
 
     function select_pc($pcids) {
-        $this->pcm = $this->load = [];
+        $this->pcm = $this->cur_uload = [];
         $pcids = array_flip($pcids);
         foreach ($this->conf->pc_members() as $cid => $p)
             if (isset($pcids[$cid])) {
                 $this->pcm[$cid] = $p;
-                $this->load[$cid] = 0;
+                $this->cur_uload[$cid] = 0;
+                $this->max_uload[$cid] = PHP_INT_MAX;
             }
         return count($this->pcm);
     }
@@ -149,7 +154,7 @@ class Autoassigner {
             $q .= " and reviewType={$reviewtype}";
         $result = $this->conf->qe($q . " group by contactId", array_keys($this->pcm));
         while (($row = edb_row($result)))
-            $this->load[(int) $row[0]] = (int) $row[1];
+            $this->cur_uload[(int) $row[0]] = (int) $row[1];
         Dbl::free($result);
     }
 
@@ -157,7 +162,7 @@ class Autoassigner {
         $q = "select {$action}ContactId, count(paperId) from Paper where paperId ?A group by {$action}ContactId";
         $result = $this->conf->qe($q, $this->papersel);
         while (($row = edb_row($result)))
-            $this->load[(int) $row[0]] = (int) $row[1];
+            $this->cur_uload[(int) $row[0]] = (int) $row[1];
         Dbl::free($result);
     }
 
@@ -295,13 +300,14 @@ class Autoassigner {
         }
     }
 
-    private function make_assignment($action, $round, $cid, $pid, &$papers) {
+    private function make_assignment($action, $round, $cid, $pid) {
         if (!$this->ass)
             $this->ass = array("paper,action,email,round");
         $this->ass[] = "$pid,$action," . $this->pcm[$cid]->email . $round;
         $this->eass[$cid][$pid] = self::ENEWASSIGN;
-        $papers[$pid]--;
-        $this->load[$cid]++;
+        ++$this->cur_uload[$cid];
+        ++$this->cur_pload[$pid];
+        ++$this->cur_acount;
         if (isset($this->badpairs[$cid]))
             foreach ($this->badpairs[$cid] as $cid2 => $x)
                 $this->eass[$cid2][$pid] = max($this->eass[$cid2][$pid], self::ENOASSIGN);
@@ -321,69 +327,76 @@ class Autoassigner {
     }
 
     // This assignment function assigns without considering preferences.
-    private function assign_stupidly(&$papers, $action, $round, $nperpc) {
-        $ndesired = $this->assign_desired($papers, $nperpc);
-        $nmade = 0;
+    private function assign_stupidly($action, $round, $nperpc) {
         $pcm = $this->pcm;
-        while (count($pcm)) {
+        while ($this->cur_acount < $this->max_acount && !empty($pcm)) {
             // choose a pc member at random, equalizing load
             $pc = null;
-            foreach ($pcm as $pcx => $p)
+            foreach ($pcm as $pcx => $p) {
                 if ($pc === null
-                    || $this->load[$pcx] < $this->load[$pc]) {
+                    || $this->cur_uload[$pcx] < $this->cur_uload[$pc]) {
                     $numminpc = 0;
                     $pc = $pcx;
-                } else if ($this->load[$pcx] == $this->load[$pc]) {
+                } else if ($this->cur_uload[$pcx] == $this->cur_uload[$pc]) {
                     $numminpc++;
                     if (mt_rand(0, $numminpc) == 0)
                         $pc = $pcx;
                 }
+            }
+            if ($this->cur_uload[$pc] >= $this->max_uload[$pc]) {
+                unset($pcm[$pc]);
+                continue;
+            }
 
             // select a paper
-            $apids = array_keys(array_filter($papers, function ($ct) { return $ct > 0; }));
-            while (count($apids)) {
+            $apids = $this->papersel;
+            while (!empty($apids)) {
                 $pididx = mt_rand(0, count($apids) - 1);
                 $pid = $apids[$pididx];
                 array_splice($apids, $pididx, 1);
-                if ($this->eass[$pc][$pid])
+                if (!isset($this->max_pload[$pid])
+                    || $this->cur_pload[$pid] >= $this->max_pload[$pid]
+                    || $this->eass[$pc][$pid]) {
                     continue;
+                }
                 // make assignment
-                $this->make_assignment($action, $round, $pc, $pid, $papers);
+                $this->make_assignment($action, $round, $pc, $pid);
                 // report progress
-                ++$nmade;
-                if ($nmade % 10 == 0)
-                    $this->set_progress(sprintf("Making assignments stupidly (%d%% done)", (int) ($nmade * 100 / $ndesired + 0.5)));
+                if ($this->cur_acount % 10 == 0)
+                    $this->set_progress(sprintf("Making assignments stupidly (%d%% done)", (int) ($this->cur_acount * 100 / $this->max_acount + 0.5)));
                 break;
             }
 
             // if have exhausted preferences, remove pc member
-            if (!$apids || $this->load[$pc] === $nperpc)
+            if (!$apids)
                 unset($pcm[$pc]);
         }
     }
 
-    private function assign_randomly(&$papers, $action, $round, $nperpc) {
-        $pref_unhappiness = $pref_dist = array_fill_keys(array_keys($this->pcm), 0);
-        $pcids = array_keys($this->pcm);
-        $ndesired = $this->assign_desired($papers, $nperpc);
-        $nmade = 0;
+    private function assign_randomly($action, $round, $nperpc) {
         $pcm = $this->pcm;
-        while (count($pcm)) {
+        $pref_unhappiness = $pref_dist = array_fill_keys(array_keys($this->pcm), 0);
+        while ($this->cur_acount < $this->max_acount && !empty($pcm) && !empty($pids)) {
             // choose a pc member at random, equalizing load
             $pc = null;
-            foreach ($pcm as $pcx => $p)
+            foreach ($pcm as $pcx => $p) {
                 if ($pc === null
-                    || $this->load[$pcx] < $this->load[$pc]
-                    || ($this->load[$pcx] == $this->load[$pc]
+                    || $this->cur_uload[$pcx] < $this->cur_uload[$pc]
+                    || ($this->cur_uload[$pcx] == $this->cur_uload[$pc]
                         && $pref_unhappiness[$pcx] > $pref_unhappiness[$pc])) {
                     $numminpc = 0;
                     $pc = $pcx;
-                } else if ($this->load[$pcx] == $this->load[$pc]
+                } else if ($this->cur_uload[$pcx] == $this->cur_uload[$pc]
                            && $pref_unhappiness[$pcx] == $pref_unhappiness[$pc]) {
                     $numminpc++;
                     if (mt_rand(0, $numminpc) == 0)
                         $pc = $pcx;
                 }
+            }
+            if ($this->cur_uload[$pc] >= $this->max_uload[$pc]) {
+                unset($pcm[$pc]);
+                continue;
+            }
 
             // traverse preferences in descending order until encountering an
             // assignable paper
@@ -394,7 +407,7 @@ class Autoassigner {
                 if (!isset($pg->apids) || $pg->apids === null)
                     $pg->apids = $pg->pids;
                 // skip if no papers left
-                if (!count($pg->apids)) {
+                if (empty($pg->apids)) {
                     next($this->pref_groups[$pc]);
                     ++$pref_dist[$pc];
                     continue;
@@ -404,28 +417,30 @@ class Autoassigner {
                 $pid = $pg->apids[$pididx];
                 array_splice($pg->apids, $pididx, 1);
                 // skip if not assignable
-                if (!isset($papers[$pid]) || $papers[$pid] <= 0 || $this->eass[$pc][$pid])
+                if (!isset($this->max_pload[$pid])
+                    || $this->cur_pload[$pid] >= $this->max_pload[$pid]
+                    || $this->eass[$pc][$pid]) {
                     continue;
+                }
                 // make assignment
-                $this->make_assignment($action, $round, $pc, $pid, $papers);
+                $this->make_assignment($action, $round, $pc, $pid);
                 $pref_unhappiness[$pc] += $pref_dist[$pc];
                 // report progress
-                ++$nmade;
-                if ($nmade % 10 == 0)
-                    $this->set_progress(sprintf("Making assignments (%d%% done)", (int) ($nmade * 100 / $ndesired + 0.5)));
+                if ($this->cur_acount % 10 == 0)
+                    $this->set_progress(sprintf("Making assignments (%d%% done)", (int) ($this->cur_acount * 100 / $this->max_acount + 0.5)));
                 break;
             }
 
             // if have exhausted preferences, remove pc member
-            if (!$pg || $this->load[$pc] === $nperpc)
+            if (!$pg)
                 unset($pcm[$pc]);
         }
     }
 
     function mcmf_progress($mcmf, $what, $phaseno = 0, $nphases = 0) {
         if ($what <= MinCostMaxFlow::PMAXFLOW_DONE) {
-            $n = min(max($mcmf->current_flow(), 0), $this->ndesired);
-            $ndesired = max($this->ndesired, 1);
+            $n = min(max($mcmf->current_flow(), 0), $this->max_acount);
+            $ndesired = max($this->max_acount, 1);
             $this->set_progress(sprintf("Preparing unoptimized assignment$this->mcmf_round_descriptor (%d%% done)", (int) ($n * 100 / $ndesired + 0.5)));
         } else {
             $x = array();
@@ -444,7 +459,6 @@ class Autoassigner {
     private function assign_mcmf_once(&$papers, $action, $round, $nperpc) {
         $m = new MinCostMaxFlow;
         $m->add_progressf(array($this, "mcmf_progress"));
-        $this->ndesired = $this->assign_desired($papers, $nperpc);
         $this->mcmf_max_cost = null;
         $this->set_progress("Preparing assignment optimizer" . $this->mcmf_round_descriptor);
         // existing assignment counts
@@ -480,16 +494,16 @@ class Autoassigner {
         }
         // user nodes
         $assperpc = ceil($nass / count($this->pcm));
-        $minload = $this->load ? min($this->load) : 0;
-        $maxload = ($this->load ? max($this->load) : 0) + $assperpc;
+        $minload = $this->cur_uload ? min($this->cur_uload) : 0;
+        $maxload = ($this->cur_uload ? max($this->cur_uload) : 0) + $assperpc;
         foreach ($this->pcm as $cid => $p) {
             $m->add_node("u$cid", "u");
-            if ($nperpc)
-                $m->add_edge(".source", "u$cid", $nperpc, 0);
-            else {
-                for ($l = $this->load[$cid]; $l < $maxload; ++$l)
-                    $m->add_edge(".source", "u$cid", 1, $this->costs->assignment * ($l - $minload));
-            }
+            if (isset($this->max_uload[$cid]))
+                $mymax = $this->max_uload[$cid];
+            else
+                $mymax = $maxload;
+            for ($l = $this->cur_uload[$cid]; $l < $mymax; ++$l)
+                $m->add_edge(".source", "u$cid", 1, $this->costs->assignment * ($l - $minload));
             if ($ceass[$cid])
                 $m->add_edge(".source", "u$cid", $ceass[$cid], 0, $ceass[$cid]);
         }
@@ -585,7 +599,7 @@ class Autoassigner {
             $navailable = 0;
             if ($nperpc) {
                 foreach ($this->pcm as $cid => $p)
-                    $navailable += max($nperpc - $this->load[$cid], 0);
+                    $navailable += max($nperpc - $this->cur_uload[$cid], 0);
             }
             if ($nmissing == 0 || $navailable == 0)
                 break;
@@ -596,47 +610,70 @@ class Autoassigner {
 
     private function assign_method(&$papers, $action, $round, $nperpc) {
         if ($this->method == self::METHOD_RANDOM)
-            $this->assign_randomly($papers, $action, $round, $nperpc);
+            $this->assign_randomly($action, $round, $nperpc);
         else if ($this->method == self::METHOD_STUPID)
-            $this->assign_stupidly($papers, $action, $round, $nperpc);
+            $this->assign_stupidly($action, $round, $nperpc);
         else
             $this->assign_mcmf($papers, $action, $round, $nperpc);
     }
 
 
-    private function check_missing_assignments(&$papers, $action) {
-        ksort($papers);
-        $badpids = array();
-        foreach ($papers as $pid => $n)
-            if ($n > 0)
-                $badpids[] = $pid;
-        if (!count($badpids))
+    private function check_missing_assignments($action) {
+        if ($this->cur_acount >= $this->max_acount);
             return;
-        $b = array();
-        $pidx = join("+", $badpids);
-        foreach ($badpids as $pid)
-            $b[] = "<a href='" . hoturl("assign", "p=$pid&amp;ls=$pidx") . "'>$pid</a>";
+
+        $bp = array_filter($this->papersel, function ($pid) {
+            return $this->cur_pload[$pid] < $this->max_pload[$pid]
+                && $this->max_pload[$pid] < PHP_INT_MAX;
+        });
+        $bu = array_filter(array_keys($this->pcm), function ($cid) {
+            return $this->cur_uload[$cid] < $this->max_uload[$cid]
+                && $this->max_uload[$cid] < PHP_INT_MAX;
+        })
+        if (!empty($bp)) {
+            sort($bp, SORT_NUMERIC);
+            $pidx = join("+", $bp);
+            $msg = "The following papers got fewer assignments than requested: "
+                . join(", ", array_map(function ($pid) use ($pidx) {
+                    return Ht::link("#$pid", hoturl("assign", "p=$pid&amp;ls=$pidx"));
+                }, $bp));
+            if (count($bp) > 1) {
+                $msg .= " (" . Ht::link("list them", hoturl("search", "q=$pidx"), ["class" => "nw"]) . ")";
+            }
+        } else if (!empty($bu)) {
+            $msg = "The following users got fewer assignments than requested: "
+                . join(", ", array_map(function ($cid) {
+                    return $this->user->reviewer_html_for($this->pcm[$cid]);
+                }, $bu));
+        } else
+            return;
+
         $x = "";
         if ($action === "rev" || $action === "revadd")
             $x = ", possibly because of conflicts or previously declined reviews in the PC members you selected";
         else
             $x = ", possibly because the selected PC members didn’t review these papers";
-        $y = (count($b) > 1 ? " (<a class='nw' href='" . hoturl("search", "q=$pidx") . "'>list them</a>)" : "");
-        $this->conf->warnMsg("I wasn’t able to complete the assignment$x.  The following papers got fewer than the required number of assignments: " . join(", ", $b) . $y . ".");
+        $this->conf->warnMsg("I wasn’t able to complete the assignment$x. $msg");
     }
 
     function run_paperpc($action, $preference) {
         if ($this->balance !== self::BALANCE_NEW)
             $this->balance_paperpc($action);
         $this->preferences_paperpc($preference);
-        $papers = array_fill_keys($this->papersel, 0);
-        $result = $this->conf->qe("select paperId from Paper where {$action}ContactId=0");
-        while (($row = edb_row($result)))
-            if (isset($papers[$row[0]]))
-                $papers[$row[0]] = 1;
+        $this->cur_pload = array_fill_keys($this->papersel, 0);
+        $this->max_pload = array_fill_keys($this->papersel, 1);
+        $result = $this->conf->qe("select paperId from Paper where {$action}ContactId!=0");
+        while ($result && ($row = $result->fetch_row())) {
+            if (isset($this->cur_pload[$row[0]]))
+                $this->cur_pload[$row[0]] = 1;
+        }
         Dbl::free($result);
-        $this->assign_method($papers, $action, "", null);
-        $this->check_missing_assignments($papers, $action);
+        $this->cur_acount = $this->max_acount = 0;
+        foreach ($this->papersel as $pid) {
+            $this->max_acount += $this->max_pload[$pid] - $this->cur_pload[$pid];
+        }
+        $this->assign_method(XXX, $action, "", null);
+        $this->check_missing_assignments($action);
     }
 
     private function analyze_reviewtype($reviewtype, $round) {
@@ -646,34 +683,50 @@ class Autoassigner {
 
     function run_reviews_per_pc($reviewtype, $round, $nass) {
         $this->preferences_review($reviewtype);
-        $papers = array_fill_keys($this->papersel, ceil((count($this->pcm) * ($nass + 2)) / count($this->papersel)));
+        $this->max_uload = array_fill_keys(array_keys($this->pcm), $nass);
+        $this->cur_pload = array_fill_keys($this->papersel, 0);
+        $this->max_pload = array_fill_keys($this->papersel, ceil((count($this->pcm) * ($nass + 2)) / count($this->papersel)));
+        $this->cur_acount = 0;
+        $this->max_acount = count($this->pcm) * $nass;
         list($action, $round) = $this->analyze_reviewtype($reviewtype, $round);
-        $this->assign_method($papers, $action, $round, $nass);
+        $this->assign_method(XXX, $action, $round, $nass);
+        $this->check_missing_assignments("revpc");
     }
 
     function run_more_reviews($reviewtype, $round, $nass) {
         if ($this->balance !== self::BALANCE_NEW)
             $this->balance_reviews($reviewtype);
         $this->preferences_review($reviewtype);
-        $papers = array_fill_keys($this->papersel, $nass);
+        $this->max_uload = [];
+        $this->cur_pload = array_fill_keys($this->papersel, 0);
+        $this->max_pload = array_fill_keys($this->papersel, $nass);
+        $this->cur_acount = 0;
+        $this->max_acount = count($this->papersel) * $nass;
         list($action, $round) = $this->analyze_reviewtype($reviewtype, $round);
-        $this->assign_method($papers, $action, $round, null);
-        $this->check_missing_assignments($papers, "revadd");
+        $this->assign_method(XXX, $action, $round, null);
+        $this->check_missing_assignments("revadd");
     }
 
     function run_ensure_reviews($reviewtype, $round, $nass) {
         if ($this->balance !== self::BALANCE_NEW)
             $this->balance_reviews($reviewtype);
         $this->preferences_review($reviewtype);
-        $papers = array_fill_keys($this->papersel, $nass);
+        $this->max_uload = [];
+        $this->cur_pload = array_fill_keys($this->papersel, 0);
+        $this->max_pload = array_fill_keys($this->papersel, $nass);
         $result = $this->conf->qe("select paperId, count(reviewId) from PaperReview where reviewType={$reviewtype} group by paperId");
-        while (($row = edb_row($result)))
-            if (isset($papers[$row[0]]))
-                $papers[$row[0]] = max($nass - $row[1], 0);
+        while ($result && ($row = $result->fetch_row())) {
+            if (isset($this->cur_pload[$row[0]]))
+                $this->cur_pload[$row[0]] = (int) $row[1];
+        }
         Dbl::free($result);
+        $this->cur_acount = $this->max_acount = 0;
+        foreach ($this->papersel as $pid) {
+            $this->max_acount += max($this->max_pload[$pid] - $this->cur_pload[$pid], 0);
+        }
         list($action, $round) = $this->analyze_reviewtype($reviewtype, $round);
-        $this->assign_method($papers, $action, $round, null);
-        $this->check_missing_assignments($papers, "rev");
+        $this->assign_method(XXX, $action, $round, null);
+        $this->check_missing_assignments("rev");
     }
 
     private function run_discussion_order_once($cflt, $plist) {
