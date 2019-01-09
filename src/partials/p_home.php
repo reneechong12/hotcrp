@@ -100,10 +100,7 @@ class Home_Partial {
 
 
     function render_head(Contact $user, Qrequest $qreq) {
-        if ($user->is_empty() || isset($qreq->signin))
-            $user->conf->header("Sign in", "home");
-        else
-            $user->conf->header("Home", "home");
+        $user->conf->header("Home", "home");
         echo '<noscript><div class="msg msg-error"><strong>This site requires JavaScript.</strong> Your browser does not support JavaScript.<br><a href="https://github.com/kohler/hotcrp/">Report bad compatibility problems</a></div></noscript>', "\n";
         if ($user->privChair)
             echo '<div id="msg-clock-drift"></div>';
@@ -187,16 +184,24 @@ class Home_Partial {
         echo '</div>';
     }
 
-    function render_signin(Contact $user, Qrequest $qreq) {
+    private function render_h2_home($x, $gx) {
+        $i = +$gx->annex("h2_home_count") + 1;
+        $gx->set_annex("h2_home_count", $i);
+        return "<h2 class=\"home home-$i\">" . $x . "</h2>";
+    }
+
+    function render_signin(Contact $user, Qrequest $qreq, $gx) {
         global $Now;
         if ($user->has_email() && !isset($qreq->signin))
             return;
 
         $conf = $user->conf;
-        echo '<div class="homegrp">', $conf->_("Sign in to submit or review papers."), '</div>';
-        echo '<div class="homegrp foldo" id="homeacct">',
+        echo '<div class="homegrp" id="homeacct">',
+            $this->render_h2_home("Sign in", $gx),
             Ht::form($conf->hoturl("index", ["post" => post_value(true)])),
             '<div class="f-contain">';
+        if (!$user->has_email())
+            echo '<p>', $conf->_("Sign in to submit or review papers."), '</p>';
         if ($conf->opt("contactdb_dsn")
             && ($x = $conf->opt("contactdb_loginFormHeading")))
             echo $x;
@@ -213,7 +218,7 @@ class Home_Partial {
             Ht::entry("email", $qreq->get("email", $password_reset ? $password_reset->email : ""),
                       ["size" => 36, "id" => "signin_email", "class" => "fullw", "autocomplete" => "username", "tabindex" => 1, "type" => $is_external_login ? "text" : "email", "autofocus" => $focus_email]),
             Ht::render_messages_at("email"),
-            '</div><div class="', Ht::control_class("password", "f-i fx"), '">';
+            '</div><div class="', Ht::control_class("password", "f-i"), '">';
         if (!$is_external_login)
             echo '<div class="float-right"><a href="" class="n x small ui js-forgot-password">Forgot your password?</a></div>';
         echo Ht::label("Password", "signin_password"),
@@ -233,12 +238,6 @@ class Home_Partial {
             && !$conf->opt("disableNonPC"))
             echo '<p class="hint">New to the site? <a href="" class="ui js-create-account">Create an account</a></p>';
         echo '</div></form></div>';
-    }
-
-    private function render_h2_home($x, $gx) {
-        $i = +$gx->annex("h2_home_count") + 1;
-        $gx->set_annex("h2_home_count", $i);
-        return "<h2 class=\"home home-$i\">" . $x . "</h2>";
     }
 
     function render_search(Contact $user, Qrequest $qreq, $gx) {
