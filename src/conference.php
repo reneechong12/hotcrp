@@ -2677,6 +2677,10 @@ class Conf {
                            && preg_match($are . 'file=([^&]+)' . $zre, $options, $m))) {
                 $t .= "/" . str_replace("%2F", "/", $m[2]);
                 $options = $m[1] . $m[3];
+            } else if ($page === "users"
+                       && preg_match($are . 't=(\w+)' . $zre, $options, $m)) {
+                $t .= "/" . $m[2];
+                $options = $m[1] . $m[3];
             } else if (preg_match($are . '__PATH__=([^&]+)' . $zre, $options, $m)) {
                 $t .= "/" . urldecode($m[2]);
                 $options = $m[1] . $m[3];
@@ -3445,14 +3449,26 @@ class Conf {
         $site_div .= '</a></h1></div>';
 
         // $header_profile
-        $profile_html = "";
+        $profile_ul = [];
         if ($Me && !$Me->is_empty()) {
             // profile link
-            $profile_parts = [];
             if ($Me->has_email() && !$Me->is_disabled()) {
-                $profile_parts[] = '<a class="q" href="' . $this->hoturl("profile") . '"><strong>'
+                $t = '<li><details><summary><a class="q" href="' . $this->hoturl("profile") . '"><strong>'
                     . htmlspecialchars($Me->email)
-                    . '</strong></a> &nbsp; <a href="' . $this->hoturl("profile") . '">Profile</a>';
+                    . '</strong></a> &nbsp; <a href="' . $this->hoturl("profile") . '">Profile</a></summary><details-menu><ul>';
+                $t .= '<li>' . $Me->name_html_for($Me) . '<br>' . htmlspecialchars($Me->email) . '</li>';
+                if (isset($_SESSION["us"]) && count($_SESSION["us"]) > 1) {
+                    $nav = Navigation::get();
+                    $t .= '<li><hr></li><li>Accounts</li>';
+                    foreach ($_SESSION["us"] as $i => $u) {
+                        if (strcasecmp($Me->email, $u) !== 0) {
+                            $t .= '<li><a href="' . htmlspecialchars($nav->base_path_relative) . "u/" . $i . "/\">" . htmlspecialchars($u) . '</a></li>';
+                        }
+                    }
+                }
+                if ($Me->is_manager())
+                    $t .= '<li><a href="' . htmlspecialchars($nav->site_path_relative) . "autoassign\">Assignments</a></li>";
+                $profile_ul[] = $t . '</ul></details-menu></details></li>';
             }
 
             // "act as" link
@@ -3461,24 +3477,21 @@ class Conf {
                     || Contact::$true_user)) {
                 // Link becomes true user if not currently chair.
                 $actas = Contact::$true_user ? Contact::$true_user->email : $actas;
-                $profile_parts[] = "<a href=\""
+                $profile_ul[] = "<li><a href=\""
                     . $this->selfurl(null, ["actas" => Contact::$true_user ? null : $actas]) . "\">"
                     . (Contact::$true_user ? "Admin" : htmlspecialchars($actas))
                     . "&nbsp;" . Ht::img("viewas.png", "Act as " . htmlspecialchars($actas))
-                    . "</a>";
+                    . "</a></li>";
             }
 
             // help, sign out
             $x = ($id == "search" ? "t=$id" : ($id == "settings" ? "t=chair" : ""));
             if (!$Me->is_disabled())
-                $profile_parts[] = '<a href="' . $this->hoturl("help", $x) . '">Help</a>';
+                $profile_ul[] = '<li><a href="' . $this->hoturl("help", $x) . '">Help</a></li>';
             if (!$Me->has_email() && !isset($this->opt["httpAuthLogin"]))
-                $profile_parts[] = '<a href="' . $this->hoturl("index", "signin=1") . '" class="nw">Sign in</a>';
+                $profile_ul[] = '<li><a href="' . $this->hoturl("index", "signin=1") . '" class="nw">Sign in</a></li>';
             if (!$Me->is_empty() || isset($this->opt["httpAuthLogin"]))
-                $profile_parts[] = '<a href="' . $this->hoturl_post("index", "signout=1") . '" class="nw">Sign out</a>';
-
-            if (!empty($profile_parts))
-                $profile_html .= join(' <span class="barsep">·</span> ', $profile_parts);
+                $profile_ul[] = '<li><a href="' . $this->hoturl_post("index", "signout=1") . '" class="nw">Sign out</a></li>';
         }
 
         $action_bar = get($extra, "action_bar");
@@ -3493,11 +3506,12 @@ class Conf {
                 $title_div = '<hr class="c">';
         }
 
-        echo $site_div, '<div id="header-right">', $profile_html;
+        echo $site_div, '<div id="header-right">';
         if ($my_deadlines && $this->has_interesting_deadline($my_deadlines))
-            echo '<div id="header-deadline">&nbsp;</div>';
+            $profile_ul[] = '<li id="header-deadline">&nbsp;</li>';
         else
-            echo '<div id="header-deadline" class="hidden"></div>';
+            $profile_ul[] = '<li id="header-deadline" class="hidden"></li>';
+        echo '<ul class="header-user">', join('', $profile_ul), '</ul>';
         echo '</div>', ($title_div ? : ""), ($action_bar ? : "");
 
         echo "  <hr class=\"c\"></div>\n";

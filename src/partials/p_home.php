@@ -213,10 +213,11 @@ class Home_Partial {
             $user->save_session("password_reset", null);
         }
         $is_external_login = $conf->external_login();
+        $want_email = !$is_external_login && !$conf->opt("debugShowSensitiveEmail");
         echo '<div class="', Ht::control_class("email", "f-i"), '">',
             Ht::label($is_external_login ? "Username" : "Email", "signin_email"),
             Ht::entry("email", $qreq->get("email", $password_reset ? $password_reset->email : ""),
-                      ["size" => 36, "id" => "signin_email", "class" => "fullw", "autocomplete" => "username", "tabindex" => 1, "type" => $is_external_login ? "text" : "email", "autofocus" => $focus_email]),
+                      ["size" => 36, "id" => "signin_email", "class" => "fullw", "autocomplete" => "username", "tabindex" => 1, "type" => $want_email ? "email" : "text", "autofocus" => $focus_email]),
             Ht::render_messages_at("email"),
             '</div><div class="', Ht::control_class("password", "f-i"), '">';
         if (!$is_external_login)

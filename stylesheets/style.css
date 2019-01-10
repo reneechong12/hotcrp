@@ -77,10 +77,23 @@ select, button {
 	padding-bottom: 24px;
 }
 #header-right {
-	padding: 8px 24px 0;
 	font-size: smaller;
-	text-align: right;
 	float: right;
+	margin-left: 24px;
+	margin-right: 24px;
+	margin-bottom: 8px;
+}
+.header-user {
+	display: flex;
+	flex-flow: row wrap;
+	list-style: none;
+	margin-top: 8px;
+	margin-bottom: 0;
+	padding-left: 0;
+	max-width: 40rem;
+}
+.header-user > li {
+	margin-left: 1.5em;
 }
 .usertime {
 	padding-top: 1px;
@@ -88,6 +101,7 @@ select, button {
 }
 #header-deadline {
 	padding-top: 1px;
+	float: right;
 }
 #header-site {
 	float: left;
@@ -348,7 +362,7 @@ td.g {
 }
 .clearfix:after, .pst:after, .pavt:after, .papet:after, .submission_modes:after,
 .revvt:after, .revet:after, .rvg:after, .cmteditinfo:after, .aa:after, .aab:after,
-.entryi:after, .checki:after, .f-horizontal:after {
+.entryi:after, .checki:after, .f-horizontal:after, #header-right:after {
 	clear: both;
 	content: "";
 	display: block;
