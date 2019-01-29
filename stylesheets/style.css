@@ -376,6 +376,31 @@ form {
 }
 
 
+summary.profile-menu {
+	list-style-type: none;
+}
+summary.profile-menu::-webkit-details-marker {
+	display: none;
+}
+ul.profile-menu {
+	background: white;
+	position: fixed;
+	font-size: 1rem;
+	z-index: 2000;
+	margin: 0;
+	padding: 0;
+}
+ul.profile-menu > li {
+	display: block;
+	list-style-type: none;
+	padding: 0;
+	margin: 0;
+}
+ul.profile-menu > li:hover {
+	background: blue;
+}
+
+
 /* body */
 div#body {
 	margin: 0 24px;

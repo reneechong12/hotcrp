@@ -3453,22 +3453,28 @@ class Conf {
         if ($Me && !$Me->is_empty()) {
             // profile link
             if ($Me->has_email() && !$Me->is_disabled()) {
-                $t = '<li><details><summary><a class="q" href="' . $this->hoturl("profile") . '"><strong>'
+                $nav = Navigation::get();
+                $nspr = htmlspecialchars($nav->site_path_relative);
+
+                $t = '<li><details><summary class="profile-menu" aria-haspopup="menu"><a class="q" href="' . $this->hoturl("profile") . '"><strong>'
                     . htmlspecialchars($Me->email)
-                    . '</strong></a> &nbsp; <a href="' . $this->hoturl("profile") . '">Profile</a></summary><details-menu><ul>';
+                    . '</strong></a> &nbsp; <a href="' . $this->hoturl("profile") . '">Profile</a></summary><ul class="profile-menu" role="menu">';
                 $t .= '<li>' . $Me->name_html_for($Me) . '<br>' . htmlspecialchars($Me->email) . '</li>';
                 if (isset($_SESSION["us"]) && count($_SESSION["us"]) > 1) {
-                    $nav = Navigation::get();
+                    $nbpr = htmlspecialchars($nav->base_path_relative);
                     $t .= '<li><hr></li><li>Accounts</li>';
                     foreach ($_SESSION["us"] as $i => $u) {
                         if (strcasecmp($Me->email, $u) !== 0) {
-                            $t .= '<li><a href="' . htmlspecialchars($nav->base_path_relative) . "u/" . $i . "/\">" . htmlspecialchars($u) . '</a></li>';
+                            $t .= '<li><a href="' . $nbpr . "u/" . $i . "/\">" . htmlspecialchars($u) . '</a></li>';
                         }
                     }
                 }
                 if ($Me->is_manager())
-                    $t .= '<li><a href="' . htmlspecialchars($nav->site_path_relative) . "autoassign\">Assignments</a></li>";
-                $profile_ul[] = $t . '</ul></details-menu></details></li>';
+                    $t .= '<li><a href="' . $nspr . "autoassign\">Assignments</a></li>";
+                $t .= '<li><hr></li>';
+                $t .= '<li><a href="' . $nspr . "help\">Help</a></li>";
+                $t .= '<li><a href="' . $this->hoturl_post("index", "signout=1") . "\">Sign out</a></li>";
+                $profile_ul[] = $t . '</ul></details></li>';
             }
 
             // "act as" link
