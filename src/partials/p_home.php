@@ -127,17 +127,17 @@ class Home_Partial {
     function render_admin_settings(Contact $user) {
         echo '<li>', Ht::link("Settings", $user->conf->hoturl("settings")), '</li>';
     }
-    function render_admin_users(Contact $user) {
-        echo '<li>', Ht::link("Users", $user->conf->hoturl("users", "t=all")), '</li>';
-    }
     function render_admin_assignments(Contact $user) {
         echo '<li>', Ht::link("Assignments", $user->conf->hoturl("autoassign")), '</li>';
     }
     function render_admin_mail(Contact $user) {
         echo '<li>', Ht::link("Mail", $user->conf->hoturl("mail")), '</li>';
     }
+    function render_admin_users(Contact $user) {
+        echo '<li>', Ht::link("Users", $user->conf->hoturl("users", "t=all")), '</li>';
+    }
     function render_admin_log(Contact $user) {
-        echo '<li>', Ht::link("Action log", $user->conf->hoturl("log")), '</li>';
+        echo '<li>', Ht::link("Log", $user->conf->hoturl("log")), '</li>';
     }
 
     function render_info_sidebar(Contact $user, Qrequest $qreq, $gx) {

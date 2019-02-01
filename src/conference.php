@@ -3462,15 +3462,20 @@ class Conf {
                 $t .= '<li>' . $Me->name_html_for($Me) . '<br>' . htmlspecialchars($Me->email) . '</li>';
                 if (isset($_SESSION["us"]) && count($_SESSION["us"]) > 1) {
                     $nbpr = htmlspecialchars($nav->base_path_relative);
-                    $t .= '<li><hr></li><li>Accounts</li>';
+                    $t .= '<li><hr></li>';
                     foreach ($_SESSION["us"] as $i => $u) {
                         if (strcasecmp($Me->email, $u) !== 0) {
                             $t .= '<li><a href="' . $nbpr . "u/" . $i . "/\">" . htmlspecialchars($u) . '</a></li>';
                         }
                     }
+                    $t .= '<li><hr></li>';
                 }
-                if ($Me->is_manager())
-                    $t .= '<li><a href="' . $nspr . "autoassign\">Assignments</a></li>";
+                if ($Me->privChair)
+                    $t .= '<li><a href="' . $nspr . 'settings">Settings</a></li>';
+                if ($Me->is_manager()) {
+                    $t .= '<li><a href="' . $nspr . 'autoassign">Assignments</a></li>';
+                    $t .= '<li><a href="' . $nspr . 'autoassign">Mail</a></li>';
+                }
                 $t .= '<li><hr></li>';
                 $t .= '<li><a href="' . $nspr . "help\">Help</a></li>";
                 $t .= '<li><a href="' . $this->hoturl_post("index", "signout=1") . "\">Sign out</a></li>";

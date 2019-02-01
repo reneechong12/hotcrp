@@ -114,7 +114,7 @@ class ContactSearch {
             return false;
     }
     private function check_user() {
-        if (strcasecmp($this->text, "anonymous") == 0
+        if (strcasecmp($this->text, "anonymous") === 0
             && !$this->cset
             && !($this->type & self::F_PC)) {
             $result = $this->conf->qe_raw("select contactId from ContactInfo where email regexp '^anonymous[0-9]*\$'");
