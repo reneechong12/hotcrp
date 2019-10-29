@@ -963,6 +963,8 @@ $blind\n";
         }
         $buttons[] = Ht::submit("cancel", "Cancel");
 
+        $buttons[] = "";
+        $buttons[] = Ht::button("Offline reviewing", ["class" => "ui js-offline-review"]);
         if ($rrow && $user->allow_administer($prow)) {
             $buttons[] = "";
             if ($submitted || $rrow->timeApprovalRequested != 0) {

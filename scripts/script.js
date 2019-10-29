@@ -3555,6 +3555,39 @@ handle_ui.on("js-review-tokens", function () {
     $d.on("submit", "form", submit);
 });
 
+handle_ui.on("js-offline-review", function () {
+    var $d;
+    function submit(evt) {
+        $d.find(".msg").remove();
+        $.post(hoturl_post("api/reviewtoken"), $d.find("form").serialize(),
+            function (data) {
+                if (data.ok) {
+                    $d.close();
+                    if (data.message) {
+                        document.cookie = "hotcrpmessage=" + encodeURIComponent(JSON.stringify(data.message));
+                        location.assign(location.href);
+                    }
+                } else {
+                    $d.find("h2").after(render_xmsg(2, data.error || "Internal error."));
+                }
+            });
+        return false;
+    }
+    var hc = popup_skeleton();
+    hc.push('<h2>Offline reviewing</h2>');
+    var rc = this.closest(".revcard");
+    if (rc && rc.hasAttribute("data-pid") && rc.hasAttribute("data-rid")) {
+        hc.push('<a class="btn" href="' + escape_entities(hoturl("review", {p: rc.getAttribute("data-pid"), r: rc.getAttribute("data-rid"), downloadForm: 1})) + '">Download this review’s offline form</a>');
+        hc.push('<div class="has-document" data-document-name="offlineform" data-document-accept="text/plain">', '</div>');
+        hc.push('<div class="document-replacer"><button type="button" class="ui js-replace-document">Upload this review’s offline form</button></div>');
+        hc.pop();
+    }
+    hc.push_actions(['<button type="submit" name="save" class="btn-primary">Save tokens</button>',
+        '<button type="button" name="cancel">Cancel</button>']);
+    $d = hc.show();
+    $d.on("submit", "form", submit);
+});
+
 window.review_form = (function ($) {
 var formj, form_order;
 var rtype_info = {
@@ -7454,6 +7487,7 @@ handle_ui.on("document-uploader", function (event) {
         $(doce).find(".document-upload").removeClass("hidden");
         $(doce).find(".js-remove-document").removeClass("undelete").html("Delete");
     }
+    $(doce).trigger("documentupdate");
 });
 
 handle_ui.on("js-remove-document", function (event) {
