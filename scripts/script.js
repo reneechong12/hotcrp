@@ -982,6 +982,7 @@ return handle_ui;
 })($);
 $(document).on("click", ".ui, .uix", handle_ui);
 $(document).on("change", ".uich", handle_ui);
+$(document).on("mousedown", ".uimd", handle_ui);
 $(document).on("keydown", ".uikd", handle_ui);
 $(document).on("input", ".uii", handle_ui);
 $(document).on("unfold", ".ui-unfold", handle_ui);
@@ -3259,6 +3260,70 @@ handle_ui.on("js-request-review-preview-email", function (event) {
 });
 
 
+// drag order
+(function ($) {
+var dritem, drpos, drcopy, dritemg, scroller;
+
+function mousemove(event) {
+    if (event.clientX != null) {
+        drpos = {x: event.clientX, y: event.clientY};
+    }
+    if (!dritemg) {
+        dritemg = $(dritem).geometry();
+        dritemg.initialX = drpos.x;
+        dritemg.initialY = drpos.y;
+        dritemg.dx = drpos.x - dritemg.left;
+        dritemg.dy = drpos.y - dritemg.top;
+    }
+    if (!drcopy
+        && (Math.max(drpos.x - dritemg.initialX) > 5
+            || Math.max(drpos.y - dritemg.initialY) > 5)) {
+        drcopy = dritem.cloneNode(true);
+        addClass(drcopy, "drag-float");
+        drcopy.style.width = dritemg.width + "px";
+        drcopy.style.height = dritemg.height + "px";
+        dritem.parentElement.appendChild(drcopy);
+    }
+}
+
+function mouseup() {
+    document.removeEventListener("mousemove", mousemove, true);
+    document.removeEventListener("mouseup", mouseup, true);
+    document.removeEventListener("scroll", mousemove, true);
+    if (window.disable_tooltip === dritem) {
+        delete window.disable_tooltip;
+    }
+    if (scroller) {
+        clearInterval(scroller);
+        scroller = null;
+    }
+    if (drcopy) {
+        dritem.parentElement.removeChild(drcopy);
+        drcopy = null;
+    }
+    // XXX drcopy
+    dritem = drpos = dritemg = null;
+}
+
+function mousedown(event) {
+    console.log(event);
+    if (dritem) {
+        mouseup();
+    }
+    dritem = this.closest(".drag-order-item");
+    document.addEventListener("mousemove", mousemove, true);
+    document.addEventListener("mouseup", mouseup, true);
+    document.addEventListener("scroll", mousemove, true);
+    mousemove(event);
+    event.stopPropagation();
+    event.preventDefault();
+}
+
+handle_ui.on("drag-order-handle", mousedown);
+
+})($);
+
+
 // author entry
 var row_order_ui = (function ($) {
 
@@ -3340,9 +3405,10 @@ function row_order_ui(event) {
     else if (hasClass(this, "delete"))
         row_order_change(this, 0, -1);
     else if (hasClass(this, "addrow")) {
-        var $parent = $(this).closest(".js-row-order"),
-            $child = $parent.children().filter("[data-row-template]");
-        $child.length && row_order_change($child[0], 0, 1);
+        var drt = this.closest(".js-row-order");
+        if (!drt.hasAttribute("data-row-template"))
+            drt = $(drt).children().filter("[data-row-template]")[0];
+        drt && row_order_change(drt, 0, 1);
     }
 }
 handle_ui.on("row-order-ui", row_order_ui);

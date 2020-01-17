@@ -213,6 +213,11 @@ class Home_Partial {
     function render_message(Contact $user) {
         if (($t = $user->conf->_i("home", false)))
             $user->conf->msg($t, 0);
+        echo '<ul class="drag-order-container">';
+        for ($i = 1; $i < 5; ++$i) {
+            echo '<li class="drag-order-item"><span class="uimd drag-order-handle">X</span> <span class="drag-order-index">', $i, '.</span></li>';
+        }
+        echo '</ul>';
     }
 
     function render_welcome(Contact $user) {

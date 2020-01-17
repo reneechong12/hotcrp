@@ -290,7 +290,7 @@ span.nb {
 .childfold, .js-foldup {
 	cursor: pointer;
 }
-.wait, body.wait input, body.wait button {
+.cursor-wait, body.cursor-wait input, body.cursor-wait button {
 	cursor: wait !important;
 }
 .checki {
@@ -2284,6 +2284,15 @@ span.dragtaghandle {
 	height: 1.3em;
 	cursor: move;
 	background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAGCAYAAADgzO9IAAAAAXNSR0IArs4c6QAAADtJREFUCNdjOHz4zs/Dh+9cYEADTAwMDF8YGBj4Dh++gypha6sizMDAoMSADyAby4Qm94WBgYEPn04GAD/XFLwv6x9HAAAAAElFTkSuQmCC') repeat;
+}
+
+span.drag-order-handle {
+	display: inline-block;
+	cursor: move;
+}
+span.drag-float {
+	display: block;
+	position: absolute;
 }
 
 .editformulas-formula {

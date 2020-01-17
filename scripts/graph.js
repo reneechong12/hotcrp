@@ -197,12 +197,14 @@ function pathNodeMayBeNearer(pathNode, point, dist) {
             t = Math.min(item[2], item[4], item[6], item[8]);
             r = Math.max(item[1], item[3], item[5], item[7]);
             b = Math.max(item[2], item[4], item[6], item[8]);
-        } else if (item[0] === "Z" || item[0] === "M")
+        } else if (item[0] === "Z" || item[0] === "M") {
             continue;
-        else
+        } else {
             return true;
-        if (!oob(l, t, r, b))
+        }
+        if (!oob(l, t, r, b)) {
             return true;
+        }
     }
     return false;
 }

@@ -9,16 +9,19 @@ if (!$Me->is_manager())
 // clean request
 
 // paper selection
-if (!isset($Qreq->q) || trim($Qreq->q) === "(All)")
+if (!isset($Qreq->q) || trim($Qreq->q) === "(All)") {
     $Qreq->q = "";
-if ($Qreq->post_ok())
+}
+if ($Qreq->post_ok()) {
     header("X-Accel-Buffering: no");  // NGINX: do not hold on to file
+}
 
 $tOpt = PaperSearch::manager_search_types($Me);
 if ($Me->privChair && !isset($Qreq->t)
     && $Qreq->a === "prefconflict"
-    && $Conf->can_pc_see_active_submissions())
+    && $Conf->can_pc_see_active_submissions()) {
     $Qreq->t = "all";
+}
 if (!isset($Qreq->t) || !isset($tOpt[$Qreq->t])) {
     reset($tOpt);
     $Qreq->t = key($tOpt);
