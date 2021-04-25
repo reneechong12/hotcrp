@@ -696,7 +696,7 @@ xassert(str_ends_with($rrow->t01, "\n==+== Want to make sure this works\n"));
 xassert_eqq($rrow->t04, "Whitherto the stuff I want to add for the authors’ response.\n");
 
 // check some review visibility policies
-$user_external = Contact::create($Conf, null, ["email" => "external@_.com", "name" => "External Reviewer"]);
+$user_external = $Conf->ensure_user_by_author(Author::make_keyed(["email" => "external@_.com", "name" => "External Reviewer"]));
 assert(!!$user_external);
 $user_mgbaker->assign_review(17, $user_external->contactId, REVIEW_EXTERNAL,
     ["round_number" => $Conf->round_number("R2", false)]);

@@ -685,7 +685,7 @@ $review2d = fetch_review($paper2, $user_mgbaker);
 xassert(!$review2d->reviewSubmitted);
 xassert($review2d->reviewNeedsSubmit == 1);
 xassert(!$user_mgbaker->can_view_review($paper2, $review2a));
-$user_external = Contact::create($Conf, null, ["email" => "external@_.com", "name" => "External Reviewer"]);
+$user_external = $Conf->ensure_user_by_author(Author::make_keyed(["email" => "external@_.com", "name" => "External Reviewer"]));
 $user_mgbaker->assign_review(2, $user_external->contactId, REVIEW_EXTERNAL);
 $review2d = fetch_review($paper2, $user_mgbaker);
 xassert(!$review2d->reviewSubmitted);
@@ -1395,7 +1395,7 @@ assert_search_papers($user_chair, "status:mis[take", "");
 
 // users
 xassert(!maybe_user("sclinx@leland.stanford.edu"));
-$u = Contact::create($Conf, null, ["email" => "sclinx@leland.stanford.edu", "name" => "Stephen Lon", "affiliation" => "Fart World"]);
+$u = $Conf->ensure_user_by_author(Author::make_keyed(["email" => "sclinx@leland.stanford.edu", "name" => "Stephen Lon", "affiliation" => "Fart World"]));
 xassert(!!$u);
 xassert($u->contactId > 0);
 xassert_eqq($u->email, "sclinx@leland.stanford.edu");
@@ -1404,7 +1404,7 @@ xassert_eqq($u->lastName, "Lon");
 xassert_eqq($u->affiliation, "Fart World");
 
 xassert(!maybe_user("scliny@leland.stanford.edu"));
-$u = Contact::create($Conf, null, ["email" => "scliny@leland.stanford.edu", "affiliation" => "Fart World"]);
+$u = $Conf->ensure_user_by_author(Author::make_keyed(["email" => "scliny@leland.stanford.edu", "affiliation" => "Fart World"]));
 xassert(!!$u);
 xassert($u->contactId > 0);
 xassert_eqq($u->email, "scliny@leland.stanford.edu");
@@ -1413,7 +1413,7 @@ xassert_eqq($u->lastName, "");
 xassert_eqq($u->affiliation, "Fart World");
 
 xassert(!maybe_user("thalerd@eecs.umich.edu"));
-$u = Contact::create($Conf, null, ["email" => "thalerd@eecs.umich.edu"]);
+$u = $Conf->ensure_user_by_email("thalerd@eecs.umich.edu");
 assert($u !== null);
 xassert(!!$u);
 xassert($u->contactId > 0);
@@ -1424,7 +1424,7 @@ xassert_eqq($u->affiliation, "University of Michigan");
 xassert($Conf->checked_paper_by_id(27)->has_author($u));
 
 xassert(!maybe_user("cengiz@isi.edu"));
-$u = Contact::create($Conf, null, ["email" => "cengiz@isi.edu", "first" => "cengiz!", "last" => "ALAETTINOGLU", "affiliation" => "USC ISI"]);
+$u = $Conf->ensure_user_by_author(Author::make_keyed(["email" => "cengiz@isi.edu", "first" => "cengiz!", "last" => "ALAETTINOGLU", "affiliation" => "USC ISI"]));
 xassert(!!$u);
 xassert($u->contactId > 0);
 xassert_eqq($u->email, "cengiz@isi.edu");
@@ -1434,7 +1434,7 @@ xassert_eqq($u->affiliation, "USC ISI");
 xassert($Conf->checked_paper_by_id(27)->has_author($u));
 
 xassert(!maybe_user("anonymous10"));
-$u = Contact::create($Conf, null, ["email" => "anonymous10"], Contact::SAVE_ANY_EMAIL);
+$u = $Conf->ensure_user_by_email("anonymous10", Conf::USER_NOVALIDATE);
 xassert($u->contactId > 0);
 xassert_eqq($Conf->fetch_value("select password from ContactInfo where email='anonymous10'"), " nologin");
 

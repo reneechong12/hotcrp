@@ -185,7 +185,7 @@ function setup_initialize_database() {
     }
 
     // Create initial administrator user.
-    $Admin = Contact::create($Conf, null, ["email" => "chair@_.com", "name" => "Jane Chair"]);
+    $Admin = $Conf->ensure_user_by_author(Author::make_keyed(["email" => "chair@_.com", "name" => "Jane Chair"]));
     $Admin->save_roles(Contact::ROLE_ADMIN | Contact::ROLE_CHAIR | Contact::ROLE_PC, $Admin);
 
     // Load data.

@@ -2137,6 +2137,88 @@ class Conf {
         return $acct;
     }
 
+    const USER_IMPORT = 1;
+    const USER_DISABLED = 2;
+    const USER_NOVALIDATE = 4;
+    const USER_NOCDB = 8;
+    /** @param string $email
+     * @param int $flags
+     * @param ?Contact $actor
+     * @return ?Contact */
+    function ensure_user_by_email($email, $flags = 0, $actor = null) {
+        return $this->ensure_user_by_author(Author::make_email($email), $flags, $actor);
+    }
+
+    /** @param Author $au
+     * @param int $flags
+     * @param ?Contact $actor
+     * @return ?Contact */
+    function ensure_user_by_author($au, $flags = 0, $actor = null) {
+        $u = $this->user_by_email($au->email);
+        $valid = validate_email($au->email);
+        if (!$u && !$valid && ($flags & self::USER_NOVALIDATE) === 0) {
+            return null;
+        }
+
+        $password = $valid ? " unset" : " nologin";
+        if ($valid
+            && ($flags & self::USER_NOCDB) === 0
+            && ($cdb = $this->contactdb())) {
+            $cu = $this->contactdb_user_by_email($au->email);
+            if (!$cu && !$u && ($flags & self::USER_IMPORT) !== 0) {
+                return null;
+            } else if (!$cu) {
+                Dbl::qe($cdb, "insert into ContactInfo set email=?, password=?, passwordTime=?, passwordUseTime=0 on duplicate key update email=email", $au->email, $password, Conf::$now);
+                $cu = $this->contactdb_user_by_email($au->email);
+            }
+        } else {
+            $cu = null;
+        }
+
+        if (!$u) {
+            $disabled = $flags & self::USER_DISABLED ? 1 : 0;
+            $result = $this->qe("insert into ContactInfo set email=?, password=?, passwordTime=?, passwordUseTime=0, disabled=? on duplicate key update email=email", $au->email, $password, Conf::$now, $disabled);
+            $u = $this->user_by_email($au->email);
+            if ($result->insert_id) {
+                $u->uflags |= Contact::UFLAG_CREATED;
+                if ($valid) {
+                    $this->mark_authorship_by_email($au, $u);
+                }
+                $type = $u->is_disabled() ? ", disabled" : "";
+                $this->log_for($actor && $actor->has_email() ? $actor : $u, $u, "Account created" . $type);
+            }
+        }
+
+        if ($cu) {
+            $cu->import_prop($u);
+            $cu->import_prop($au);
+            $cu->save_prop();
+        }
+        $u->import_prop($cu ?? $au);
+        $u->save_prop();
+        return $u;
+    }
+
+    /** @param Author $au0
+     * @param Contact $u */
+    private function mark_authorship_by_email($au0, $u) {
+        $ps = [];
+        $result = $this->q("select paperId, authorInformation from Paper where authorInformation like " . Dbl::utf8ci($this->dblink, "'%\t" . sqlq_for_like($au0->email) . "\t%'"));
+        while (($row = PaperInfo::fetch($result, null, $this))) {
+            if (($au = $row->author_by_email($au0->email))) {
+                $ps[] = $row->paperId;
+                $au0->merge($au);
+            }
+        }
+        Dbl::free($result);
+        if (!empty($ps)) {
+            $this->ql("insert into PaperConflict (paperId,contactId,conflictType) values ?v on duplicate key update conflictType=(conflictType|" . CONFLICT_AUTHOR . ")",
+                array_map(function ($pid) use ($u) {
+                    return [$pid, $u->contactId, CONFLICT_AUTHOR];
+                }, $ps));
+        }
+    }
+
     /** @return array<int,Contact> */
     function cached_sliced_users(Contact $firstu) {
         $a = [];

@@ -105,7 +105,7 @@ class LoginHelper {
 
         // auto-create account if external login
         if (!$user->contactId) {
-            $user = Contact::create($conf, null, $qreq->as_array(), Contact::SAVE_ANY_EMAIL);
+            $user = $conf->ensure_user_by_author(Author::make_keyed($qreq->as_array()), Conf::USER_NOVALIDATE);
             if (!$user) {
                 return ["ok" => false, "internal" => true, "email" => true];
             }
@@ -229,9 +229,11 @@ class LoginHelper {
         } else if (!validate_email($qreq->email)) {
             return ["ok" => false, "email" => true, "invalidemail" => true];
         } else {
-            if (!$user->has_account_here()
-                && !($user = Contact::create($conf, null, $qreq->as_array()))) {
-                return ["ok" => false, "email" => true, "internal" => true];
+            if (!$user->has_account_here()) {
+                $user = $conf->ensure_user_by_author(Author::make_keyed($qreq->as_array()));
+                if (!$user) {
+                    return ["ok" => false, "email" => true, "internal" => true];
+                }
             }
             $info = self::forgot_password_info($conf, $qreq, true);
             if ($info["ok"] && $info["mailtemplate"] === "@resetpassword") {

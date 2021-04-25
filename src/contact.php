@@ -61,6 +61,9 @@ class Contact {
     private $_sortspec;
     /** @var ?int */
     public $sort_position;
+    const UFLAG_CREATED = 1;
+    /** @var int */
+    public $uflags = 0;
 
     /** @var ?string */
     private $collaborators;
