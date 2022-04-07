@@ -76,26 +76,6 @@
         "json_values": ["no", "yes", "approval-required", "approval-required-potential-conflicts"]
     },
     {
-        "name_pattern": "extrev_hard_$",
-        "title": "External reviewer hard review deadline",
-        "type": "date", "subtype": "explicit_none", "placeholder": "same as PC",
-        "parser_class": "ReviewDeadline_SettingParser",
-        "require": "src/settings/s_reviews.php", "parse_order": 1.1
-    },
-    {
-        "name": "extrev_roundtag",
-        "title": "External assignment review round",
-        "type": "tagselect", "parser_class": "RoundSelector_SettingParser", "default_value": "default",
-        "require": "src/settings/s_reviews.php", "parse_order": 1
-    },
-    {
-        "name_pattern": "extrev_soft_$",
-        "title": "External reviewer soft review deadline",
-        "type": "date", "subtype": "explicit_none", "placeholder": "same as PC",
-        "parser_class": "ReviewDeadline_SettingParser",
-        "require": "src/settings/s_reviews.php", "parse_order": 1
-    },
-    {
         "name": "extrev_view",
         "title": "External reviewers can view reviews",
         "type": "radio",
@@ -320,6 +300,29 @@
         "type": "radio", "values": [0, 1, 2, 3], "default_value": 0,
         "json_values": ["no", "yes", "approval-required", "approval-private"]
     },
+
+    {
+        "name": "tag_rounds",
+        "type": "taglist", "parser_class": "Round_SettingParser",
+        "require": "src/settings/s_reviews.php", "parse_order": 0
+    },
+    {
+        "name": "rev_roundtag",
+        "title": "Assignment review round",
+        "type": "tagselect", "parser_class": "RoundSelector_SettingParser",
+        "require": "src/settings/s_reviews.php", "parse_order": 1
+    },
+    {
+        "name": "extrev_roundtag",
+        "title": "External assignment review round",
+        "type": "tagselect", "parser_class": "RoundSelector_SettingParser", "default_value": "default",
+        "require": "src/settings/s_reviews.php", "parse_order": 1
+    },
+    {
+        "name_pattern": "roundname_$", "internal": true,
+        "title": "Review round name", "hashid": "rounds",
+        "type": "tag", "size": 12, "placeholder": "unnamed"
+    },
     {
         "name_pattern": "pcrev_hard_$",
         "title": "PC review hard deadline",
@@ -334,6 +337,21 @@
         "parser_class": "ReviewDeadline_SettingParser",
         "require": "src/settings/s_reviews.php", "parse_order": 1
     },
+    {
+        "name_pattern": "extrev_hard_$",
+        "title": "External reviewer hard review deadline",
+        "type": "date", "subtype": "explicit_none", "placeholder": "same as PC",
+        "parser_class": "ReviewDeadline_SettingParser",
+        "require": "src/settings/s_reviews.php", "parse_order": 1.1
+    },
+    {
+        "name_pattern": "extrev_soft_$",
+        "title": "External reviewer soft review deadline",
+        "type": "date", "subtype": "explicit_none", "placeholder": "same as PC",
+        "parser_class": "ReviewDeadline_SettingParser",
+        "require": "src/settings/s_reviews.php", "parse_order": 1
+    },
+
     {
         "name": "response_active",
         "title": "Collect authors’ responses",
@@ -424,12 +442,6 @@
         "values": [0, 1, 2], "default_value": 0,
         "json_values": ["pc", "all", "no"]
     },
-    {
-        "name": "rev_roundtag",
-        "title": "Assignment review round",
-        "type": "tagselect", "parser_class": "RoundSelector_SettingParser", "default": "",
-        "require": "src/settings/s_reviews.php", "parse_order": 1
-    },
 
     {
         "name": "review_form", "internal": true, "type": "string"
@@ -502,11 +514,6 @@
     {   "name_pattern": "rf__$__exists_if", "alias_pattern": "rf__$__condition"   },
     {   "name_pattern": "rf__$__display_space", "internal": true   },
 
-    {
-        "name_pattern": "roundname_$", "internal": true,
-        "title": "Review round name", "hashid": "rounds",
-        "type": "tag", "size": 12, "placeholder": "unnamed"
-    },
     {
         "name": "seedec",
         "title": "Decision visibility",
@@ -687,11 +694,6 @@
         "name": "tag_rank",
         "title": "Ranking tags",
         "type": "taglist", "parser_class": "Tags_SettingParser", "size": 50, "autogrow": true
-    },
-    {
-        "name": "tag_rounds",
-        "type": "taglist", "parser_class": "Round_SettingParser",
-        "require": "src/settings/s_reviews.php", "parse_order": 0
     },
     {
         "name": "tag_seeall",
