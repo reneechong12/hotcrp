@@ -195,6 +195,8 @@ class Si {
             $this->storage_type = self::SI_NONE;
         } else if ($this->_tclass) {
             $this->storage_type = $this->_tclass->storage_type();
+        } else if ($this->part2 !== null) {
+            $this->storage_type = self::SI_NONE;
         } else {
             $this->storage_type = self::SI_VALUE;
         }

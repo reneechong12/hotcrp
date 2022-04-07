@@ -558,4 +558,28 @@ class Settings_Tester {
         xassert($sv->execute());
         xassert_eqq(trim($sv->full_feedback_text()), "");
     }
+
+    function test_siset_keys_with_prefix() {
+        $cs = new ComponentSet($this->u_chair);
+        $sis = new SettingInfoSet($cs, ['[
+    {"name_pattern": "test__$__a"},
+    {"name_pattern": "test2__$__a"},
+    {"name_pattern": "test__$__z"},
+    {"name_pattern": "test2__$__zzz"},
+    {"name_pattern": "test2__$__zx__$$__v"},
+    {"name": "test2__a__b"}
+            ]']);
+
+        $a = $sis->child_keys(["test__", "1"]);
+        sort($a);
+        xassert_eqq($a, ["test__1__a","test__1__z"]);
+
+        $a = $sis->child_keys(["test2__", "75"]);
+        sort($a);
+        xassert_eqq($a, ["test2__75__a","test2__75__zzz"]);
+
+        $a = $sis->child_keys(["test2__", "a"]);
+        sort($a);
+        xassert_eqq($a, ["test2__a__a","test2__a__b","test2__a__zzz"]);
+    }
 }

@@ -14,6 +14,8 @@ class SettingInfoSet {
     private $xlist = [];
     /** @var list<string> */
     private $potential_aliases = [];
+    /** @var list<string> */
+    private $initial_xmap_keys;
 
     function __construct(ComponentSet $cs, ...$args) {
         $this->cs = $cs;
@@ -23,6 +25,14 @@ class SettingInfoSet {
         foreach ($this->cs->members("") as $gj) {
             $this->_assign_pages($gj, [$gj->group], true);
         }
+        $this->initial_xmap_keys = array_keys($this->xmap);
+        sort($this->initial_xmap_keys);
+    }
+
+    /** @return SettingInfoSet */
+    static function make_conf(Conf $conf) {
+        $cs = new ComponentSet($conf->root_user(), ["etc/settinggroups.json"], $conf->opt("settingGroups"));
+        return new SettingInfoSet($cs, ["etc/settinginfo.json"], $conf->opt("settingInfo"));
     }
 
     /** @return SettingInfoSet */
@@ -240,5 +250,68 @@ class SettingInfoSet {
         }
         usort($a, "Conf::xt_order_compare");
         return $a;
+    }
+
+    /** @param list<string> $parts
+     * @param list<string> $pattern
+     * @param int $n
+     * @return bool */
+    private function _same_fixed_parts($parts, $pattern, $n) {
+        for ($i = 0; $i < $n; $i += 2) {
+            if ($parts[$i] !== $pattern[$i])
+                return false;
+        }
+        return true;
+    }
+
+    /** @param list<string> $parts
+     * @return list<string> */
+    function child_keys($parts) {
+        $n = count($parts);
+        assert($n >= 2 && ($n % 2 === 0 || $parts[$n - 1] === ""));
+        if ($n % 2 !== 0) {
+            --$n;
+        }
+        $pfx = join("", $parts);
+        $result = [];
+
+        // search for expansions
+        for ($i = 0; $i !== count($this->xlist); $i += 2) {
+            if ($this->xlist[$i] === $parts[0]) {
+                $xl = $this->xlist[$i + 1];
+                $nxl = count($xl);
+                for ($j = 0; $j !== $nxl; $j += 2) {
+                    if ($xl[$j] !== ""
+                        && count($xl[$j + 1]->parts) === $n + 1
+                        && $this->_same_fixed_parts($parts, $xl[$j + 1]->parts, $n)
+                        && !array_key_exists($pfx . $xl[$j], $this->xmap)) {
+                        $result[] = $pfx . $xl[$j];
+                    }
+                }
+            }
+        }
+
+        // binary search
+        $xpfx = $pfx . "__";
+        $l = 0;
+        $r = $n = count($this->initial_xmap_keys);
+        while ($l < $r) {
+            $m = $l + (($r - $l) >> 1);
+            if ($this->initial_xmap_keys[$m] < $xpfx) {
+                $l = $m + 1;
+            } else {
+                $r = $m;
+            }
+        }
+
+        while ($l < $n && str_starts_with($this->initial_xmap_keys[$l], $xpfx)) {
+            $k = $this->initial_xmap_keys[$l];
+            if (!in_array($k, $result)) {
+                $result[] = $k;
+            }
+            ++$l;
+        }
+
+        return $result;
     }
 }

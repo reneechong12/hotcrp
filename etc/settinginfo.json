@@ -55,7 +55,7 @@
         "name_pattern": "decision__$",
         "type": "object", "storage": "none", "parser_class": "Decisions_SettingParser"
     },
-    {   "name_pattern": "decision__$__id", "internal": true   },
+    {   "name_pattern": "decision__$__id", "type": "id"   },
     {
         "name_pattern": "decision__$__name", "title": "Decision name",
         "type": "simplestring", "size": 35, "placeholder": "Decision name",
@@ -205,7 +205,7 @@
         "name_pattern": "sf__$",
         "type": "object", "storage": "none", "parser_class": "Options_SettingParser"
     },
-    {   "name_pattern": "sf__$__id", "internal": true   },
+    {   "name_pattern": "sf__$__id", "type": "id"   },
     {
         "name_pattern": "sf__$__order",
         "title": "Submission field order", "title_pattern": "‘${sv sf__$__name}’ order",
@@ -370,7 +370,7 @@
         "name_pattern": "response__$",
         "type": "object", "storage": "none", "parser_class": "Responses_SettingParser"
     },
-    {   "name_pattern": "response__$__id", "internal": true, "type": "string"   },
+    {   "name_pattern": "response__$__id", "type": "id"   },
     {
         "name_pattern": "response__$__name",
         "title": "Response name", "placeholder": "Response name",
@@ -455,7 +455,7 @@
         "name_pattern": "rf__$",
         "type": "object", "storage": "none", "parser_class": "ReviewForm_SettingParser"
     },
-    {   "name_pattern": "rf__$__id", "internal": true   },
+    {   "name_pattern": "rf__$__id", "type": "id"   },
     {
         "name_pattern": "rf__$__name", "title": "Review field name",
         "type": "simplestring", "required": true, "storage": "member.name",
@@ -720,7 +720,7 @@
         "name_pattern": "topic__$",
         "type": "object", "storage": "none", "parser_class": "Topics_SettingParser"
     },
-    {   "name_pattern": "topic__$__id", "internal": true   },
+    {   "name_pattern": "topic__$__id", "type": "id"   },
     {
         "name_pattern": "topic__$__name", "title": "Topic name",
         "type": "simplestring", "size": 80, "autogrow": true, "storage": "member.name"
@@ -742,7 +742,7 @@
         "name_pattern": "track__$",
         "type": "object", "storage": "none", "parser_class": "Tracks_SettingParser"
     },
-    {   "name_pattern": "track__$__id", "internal": true, "type": "string"   },
+    {   "name_pattern": "track__$__id", "type": "id"   },
     {
         "name_pattern": "track__$__tag",
         "title": "Track tag",

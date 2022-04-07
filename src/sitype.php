@@ -13,6 +13,7 @@ abstract class Sitype {
         "float" => "+Float_Sitype",
         "grace" => "+Grace_Sitype",
         "htmlstring" => "+Html_Sitype",
+        "id" => "+Id_Sitype",
         "int" => "+Nonnegint_Sitype", /* XXX */
         "longstring" => "+String_Sitype",
         "nonnegint" => "+Nonnegint_Sitype",
@@ -352,6 +353,23 @@ class Float_Sitype extends Sitype {
     }
     function unparse_jsonv($v, Si $si) {
         return $v;
+    }
+}
+
+class Id_Sitype extends Sitype {
+    function storage_type() {
+        return Si::SI_NONE;
+    }
+    function parse_reqv($vstr, Si $si, SettingValues $sv) {
+        return trim($vstr);
+    }
+    function convert_jsonv($jv, Si $si, SettingValues $sv) {
+        if ($jv === null || is_int($jv) || is_float($jv) || is_string($jv)) {
+            return (string) $jv;
+        } else {
+            $sv->error_at($si, "<0>Scalar required");
+            return null;
+        }
     }
 }
 
