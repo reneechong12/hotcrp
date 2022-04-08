@@ -516,7 +516,7 @@ class SettingValues extends MessageSet {
             }
         }
         $si = is_string($id) ? $this->si($id) : $id;
-        return $si->base_unparse_reqv($this->oldv($si));
+        return $si->oldv_vstr($this);
     }
 
 
@@ -524,20 +524,17 @@ class SettingValues extends MessageSet {
      * @return mixed */
     function vjson($id) {
         $si = is_string($id) ? $this->si($id) : $id;
-        if ($si->type === "objectlist") {
-            $a = [];
-            foreach ($this->enumerate("{$si->name}__") as $ctr) {
-                $a[] = $this->vjson("{$si->name}__{$ctr}");
-            }
-            return $a;
-        }
-        if ($this->_use_req) {
-            $name = is_string($id) ? $id : $id->name;
-            if (isset($this->req[$name])) {
-                return $si->base_unparse_jsonv($this->req[$name]);
+        if ($this->_use_req
+            && !$si->internal
+            && isset($this->req[$si->name])) {
+            $im = $this->swap_ignore_messages(true);
+            $v = $si->parse_reqv($this->req[$si->name], $this);
+            $this->swap_ignore_messages($im);
+            if ($v !== null) {
+                return $si->value_as_json($v, $this);
             }
         }
-        return $si->base_unparse_jsonv($this->oldv($si));
+        return $si->oldv_json($this);
     }
 
 
@@ -700,6 +697,7 @@ class SettingValues extends MessageSet {
                 $badctr = $ctr1;
                 break;
             }
+            ++$ctr1;
         }
         $this->swap_ignore_messages($oim);
         if ($badctr !== null) {
@@ -897,7 +895,7 @@ class SettingValues extends MessageSet {
             && !isset($js["data-default-value"])
             && !isset($js["data-default-checked"])) {
             if ($si && $this->has_interest($si)) {
-                $x["data-default-value"] = $si->base_unparse_reqv($this->oldv($si));
+                $x["data-default-value"] = $si->oldv_vstr($this);
             } else if (isset($this->_explicit_oldv[$name])) {
                 $x["data-default-value"] = $this->_explicit_oldv[$name];
             }

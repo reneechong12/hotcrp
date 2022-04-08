@@ -27,7 +27,7 @@ class Decisions_SettingParser extends SettingParser {
      * @param array<int> $countmap */
     static private function print_decrow(SettingValues $sv, $ctr, $countmap) {
         $did = $sv->vstr("decision__{$ctr}__id");
-        $isnew = $did === "" || $did === "\$";
+        $isnew = $did === "" || $did === "\$" || $did === "new";
         $count = $countmap[$did] ?? 0;
         $editable = $sv->editable("decision");
         echo '<div id="decision__', $ctr, '" class="has-fold foldo settings-decision',

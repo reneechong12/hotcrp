@@ -2,6 +2,7 @@
 // settings.php -- HotCRP settings script
 // Copyright (c) 2006-2022 Eddie Kohler; see LICENSE.
 
+define("HOTCRP_TESTHARNESS", 1);
 if (realpath($_SERVER["PHP_SELF"]) === __FILE__) {
     require_once(dirname(__DIR__) . "/src/init.php");
     exit(Settings_Batch::make_args($argv)->run());

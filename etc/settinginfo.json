@@ -39,8 +39,7 @@
     },
 
     {
-        "name": "decisions", "hashid": "decision-types",
-        "internal": true
+        "name": "decisions", "hashid": "decision-types", "internal": true
     },
     {
         "name": "outcome_map", "internal": true,
@@ -189,8 +188,8 @@
         "type": "emailheader", "size": 80, "placeholder": "(none)"
     },
     {
-        "name": "options", "hashid": false,
-        "internal": true, "type": "string", "storage": "dat.options"
+        "name": "options", "internal": true, "hashid": false,
+        "type": "string", "storage": "dat.options"
     },
     {
         "name": "options_version", "internal": true,
@@ -378,8 +377,8 @@
         "storage": "member.name", "parser_class": "Responses_SettingParser"
     },
     {
-        "name_pattern": "response__$__title",
-        "internal": true, "parser_class": "Responses_SettingParser"
+        "name_pattern": "response__$__title", "internal": true,
+        "parser_class": "Responses_SettingParser"
     },
     {
         "name_pattern": "response__$__open",

@@ -145,6 +145,8 @@ class Si {
             } else {
                 trigger_error("setting {$j->name}.storage format error");
             }
+        } else if ($this->part2 !== null && str_starts_with($this->part2, "__")) {
+            $this->storage = "member." . substr($this->part2, 2);
         }
         if (isset($j->hashid)) {
             if (is_string($j->hashid) || $j->hashid === false) {
@@ -385,13 +387,13 @@ class Si {
         }
     }
 
-    /** @param null|int|string $v
+    /** @param SettingValues $sv
      * @return string */
-    function base_unparse_reqv($v) {
+    function oldv_vstr($sv) {
         if ($this->_tclass) {
-            return $this->_tclass->unparse_reqv($v, $this);
+            return $this->_tclass->oldv_vstr($this, $sv);
         } else {
-            return (string) $v;
+            return (string) $sv->oldv($this);
         }
     }
 
@@ -411,11 +413,32 @@ class Si {
         }
     }
 
-    /** @param null|int|string $v
+    /** @param SettingValues $sv
      * @return mixed */
-    function base_unparse_jsonv($v) {
+    function oldv_json($sv) {
         if ($this->_tclass) {
-            return $this->_tclass->unparse_jsonv($v, $this);
+            return $this->_tclass->oldv_json($this, $sv);
+        } else {
+            return $sv->oldv($this);
+        }
+    }
+
+    /** @param SettingValues $sv
+     * @return mixed */
+    function value_as_json($v, $sv) {
+        if ($this->_tclass) {
+            return $this->_tclass->value_as_json($v, $this, $sv);
+        } else {
+            return $v;
+        }
+    }
+
+    /** @param null|int|string $v
+     * @param SettingValues $sv
+     * @return mixed */
+    function base_unparse_jsonv($v, $sv) {
+        if ($this->_tclass) {
+            return $this->_tclass->unparse_jsonv($v, $this, $sv);
         } else {
             return $v;
         }
