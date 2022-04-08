@@ -35,12 +35,6 @@ class SettingInfoSet {
         return new SettingInfoSet($cs, ["etc/settinginfo.json"], $conf->opt("settingInfo"));
     }
 
-    /** @return SettingInfoSet */
-    static function make_conf(Conf $conf) {
-        $cs = new ComponentSet($conf->root_user(), ["etc/settinggroups.json"], $conf->opt("settingGroups"));
-        return new SettingInfoSet($cs, ["etc/settinginfo.json"], $conf->opt("settingInfo"));
-    }
-
     function _add_item($v, $k, $landmark) {
         if (isset($v->name_pattern)) {
             $parts = [];
