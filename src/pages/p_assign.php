@@ -54,34 +54,22 @@ class Assign_Page {
         $round = CsvGenerator::quote(":" . (string) $rname);
 
         $confset = $this->conf->conflict_types();
-        $acceptable_review_types = [];
-        foreach ([0, REVIEW_PC, REVIEW_SECONDARY, REVIEW_PRIMARY, REVIEW_META] as $t) {
-            $acceptable_review_types[] = (string) $t;
-        }
+        $acceptable_review_types = ["none", "pc", "secondary", "primary", "meta"];
 
         $prow = $this->prow;
         $t = ["paper,action,email,round,conflict\n"];
         foreach ($this->conf->pc_members() as $cid => $p) {
-            if ($reviewer
-                && strcasecmp($p->email, $reviewer) != 0
-                && (string) $p->contactId !== $reviewer) {
+            $assignment = $this->qreq["assrev{$prow->paperId}u{$cid}"];
+            if (($reviewer
+                 && strcasecmp($p->email, $reviewer) != 0
+                 && (string) $p->contactId !== $reviewer)
+                || !isset($assignment)) {
                 continue;
             }
 
-            if (isset($this->qreq["assrev{$prow->paperId}u{$cid}"])) {
-                $assignment = $this->qreq["assrev{$prow->paperId}u{$cid}"];
-            } else if (isset($this->qreq["pcs{$cid}"])) {
-                $assignment = $this->qreq["pcs{$cid}"];
-            } else {
-                continue;
-            }
-
-            if (in_array($assignment, $acceptable_review_types, true)) {
-                $revtype = ReviewInfo::unparse_assigner_action((int) $assignment);
-                $conftype = "off";
-            } else if ($assignment === "-1") {
+            if ($assignment === "none") {
                 $revtype = "clearreview";
-                $conftype = "on";
+                $conftype = "off";
             } else if (($type = ReviewInfo::parse_type($assignment, true))) {
                 $revtype = ReviewInfo::unparse_assigner_action($type);
                 $conftype = "off";
